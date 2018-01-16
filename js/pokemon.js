@@ -6,9 +6,16 @@
  * JSON data of loaded Pokemon
  * @type JSON
  */
-var pokemon_data = {}, moves_data = [], battle_data = {}, afflictions = [], dex_data = {};
+var character_data = {}, moves_data = [], battle_data = {}, afflictions = [], dex_data = {};
 
 var currentMove = null;
+var character_id = null; //TODO: replace with character_data["ID"]
+
+/**
+ * Peer to Peer Connection
+ * @type DataConnection
+ */
+var connection = null;
 
 
 /**
@@ -16,22 +23,10 @@ var currentMove = null;
  */
 $(function () {
 
-    // ON MOVE CLICKED
-    $(".btn-move").click(function () {
-        currentMove = $(this).find(".move-name").html();
-
-        $(".modal-move .move-desc").html($(this).find(".move-desc").attr("data-content"));
-        $(".modal-move .move-name").html(currentMove).css("color", $(this).find(".move-name").css("color"));
-
-        updateTargetList();
-
-        $('#modalTarget').modal('show');
-    });
-
     $("#btn-do-dmg").click(function () {
         sendMessage(host_id, JSON.stringify({
             "type": "battle_damage",
-            "target": $("#pokemonId").val(),
+            "target": character_id,
             "moveType": $("#dmg-type").val(),
             "isSpecial": $("#do-dmg-sp").is(':checked'),
             "damage": $("#do-dmg").val()
@@ -39,33 +34,41 @@ $(function () {
     });
 
     $("#btn-do-heal").click(function () {
-        var max_hp = pokemon_data['level'] + pokemon_data['hp'] * 3 + 10;
+        var max_hp = character_data['level'] + character_data['hp'] * 3 + 10;
 
-        pokemon_data["health"] += $("#do-heal").val();
+        character_data["health"] += $("#do-heal").val();
 
-        if (pokemon_data["health"] > max_hp)
-            pokemon_data["health"] = max_hp;
+        if (character_data["health"] > max_hp)
+            character_data["health"] = max_hp;
 
         sendMessage(host_id, JSON.stringify({
             "type": "pokemon_update",
-            "pokemon": $("#pokemonId").val(),
+            "pokemon": character_id,
             "field": "health",
-            "value": pokemon_data["health"]
+            "value": character_data["health"]
         }));
     });
 
     $("#stages").find("input").change(function () {
         sendMessage(host_id, JSON.stringify({
             "type": "pokemon_setcs",
-            "pokemon": $("#pokemonId").val(),
+            "pokemon": character_id,
             "field": $(this).attr("data-target"),
             "value": $(this).val()
         }));
 
+        if ($(this).attr("id") == "stage-acc")
+            $("#move-acc-bonus").val($(this).val());
+
         if ($(this).attr("id") == "stage-speed") {
-            var s = pokemon_data["speed"] * getStageMultiplier(parseInt($(this).val()));
+            var s = character_data["speed"] * getStageMultiplier(parseInt($(this).val()));
             $("#speed").html(s);
         }
+    });
+
+    // Link Move Accuracy Bonus with Accuracy 'Stage'
+    $("#move-acc-bonus").change(function () {
+        $("#stage-acc").val($(this).val());
     });
 
     $(".progress").click(function () {
@@ -99,7 +102,7 @@ $(function () {
         // Update remotely
         sendMessage(host_id, JSON.stringify({
             "type": "pokemon_afflict_add",
-            "pokemon": $("#pokemonId").val(),
+            "pokemon": character_id,
             "affliction": a,
             "value": null
         }));
@@ -115,14 +118,14 @@ $(function () {
 function displayInit() {
     var display = $("#tab1");
 
-    $(".name").html(pokemon_data["name"]);
-    $(".level").html('Level ' + pokemon_data['level']);
-    $(".pokemon-image").attr("src", "img/pokemon/"+pokemon_data["dex"]+".gif");
+    $(".name").html(character_data["name"]);
+    $(".level").html('Level ' + character_data['level']);
+    $(".pokemon-image").attr("src", "img/pokemon/"+character_data["dex"]+".gif");
 
-    //$("#dex-species").html('#' + pokemon_data["dex"] + ' - Species');
+    //$("#dex-species").html('#' + character_data["dex"] + ' - Species');
 
     //Pokedex Data is set here
-    $.getJSON("api/v1/pokemon/" + pokemon_data['dex'], function (dex) {
+    $.getJSON("api/v1/pokemon/" + character_data['dex'], function (dex) {
 
         dex_data = dex;
 
@@ -130,7 +133,7 @@ function displayInit() {
         // Basic Pokemon information
         // -=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-        $("#DexData_Basic_ID").html(pokemon_data["dex"]);
+        $("#DexData_Basic_ID").html(character_data["dex"]);
         $("#DexData_Basic_SpeciesName").html(dex.Species);
 
         //Sets the Pokemons Type on the Dex Screen.
@@ -301,13 +304,26 @@ function displayInit() {
     });
 
     //Speed Stat is set here
-    $("#speed").html(pokemon_data["speed"]);
+    $("#speed").html(character_data["speed"]);
 
     $.each(moves_data, function (i, move) {
 
-        var movesEntry = display.find(".btn-move-" + (i + 1));
+        var moveBtn = $('<a class="btn btn-raised btn-move">\n' +
+            '                    <div>\n' +
+            '                        <h4 class="move-name"></h4>\n' +
+            '                        <span class="pull-right">\n' +
+            '                                <span class="label label-warning label-type"></span>\n' +
+            '                            </span>\n' +
+            '                    </div>\n' +
+            '                    <div class="btn-move-footer">\n' +
+            '                            <span class="pull-right move-desc" data-toggle="tooltip" data-placement="left">\n' +
+            '                                <i class="material-icons">info</i>\n' +
+            '                            </span>\n' +
+            '                        <span class="move-freq"></span>\n' +
+            '                    </div>\n' +
+            '                </a>');
 
-        movesEntry.css("display", "block");
+        moveBtn.css("display", "block").attr("data-index", i);
 
         var title = move["Title"];
         var freq = move["Freq"];
@@ -335,10 +351,12 @@ function displayInit() {
 
         // Put data on card
 
-        movesEntry.find(".move-name").html(title).css("color", color);
-        movesEntry.find(".label-type").html(type).css("background-color", color);
-        movesEntry.find(".move-freq").html(frqIco);
-        movesEntry.find(".move-desc").attr("data-content", dmgType + " Move. " + desc);
+        moveBtn.find(".move-name").html(title).css("color", color);
+        moveBtn.find(".label-type").html(type).css("background-color", color);
+        moveBtn.find(".move-freq").html(frqIco);
+        moveBtn.find(".move-desc").attr("data-content", dmgType + " Move. " + desc);
+
+        $(".moves").append(moveBtn);
     });
 
     $('[data-toggle="tooltip"]').tooltip();
@@ -347,6 +365,41 @@ function displayInit() {
     display.find(".pokemon-enemy").css("display", "block");
 
     updateStatus();
+
+    $(".btn-move").click(function () {
+        var move = moves_data[parseInt($(this).attr("data-index"))];
+        currentMove = move;
+
+        // Populate fields
+        $(".modal-move .move-desc").html(move["Effect"]);
+        $(".modal-move .move-name").html(move["Title"]).css("color", $(this).find(".move-name").css("color"));
+        $(".modal-move #move-type").val(move["Type"]).parent().removeClass("is-empty");
+        $(".modal-move #move-class").val(move["Class"]).parent().removeClass("is-empty");
+
+        if (move["DB"])
+            $(".modal-move #move-db").removeAttr("disabled").val(move["DB"]);
+        else
+            $(".modal-move #move-db").attr("disabled", "").val("");
+
+        if (move["AC"])
+            $(".modal-move #move-ac").removeAttr("disabled").val(move["AC"]);
+        else
+            $(".modal-move #move-ac").attr("disabled", "").val("");
+
+        if (move["Range"])
+            $(".modal-move #move-range").val(move["Range"]);
+        else
+            $(".modal-move #move-range").val("");
+
+        if (move["Crits On"])
+            $(".modal-move #move-crit").removeAttr("disabled").val(move["Crits On"]);
+        else
+            $(".modal-move #move-crit").attr("disabled", "").val("");
+
+        updateTargetList();
+
+        $('#modalTarget').modal('show');
+    });
 }
 
 function onTargetGridLoaded() {
@@ -388,10 +441,10 @@ function updateInfoPage() {
 }
 
 function updateStatus() {
-    var max_hp = pokemon_data['level'] + pokemon_data['hp'] * 3 + 10;
+    var max_hp = character_data['level'] + character_data['hp'] * 3 + 10;
 
-    $(".bar-hp").css("width", Math.floor((parseInt(pokemon_data['health']) / max_hp) * 100) + "%");
-    $(".bar-exp").css("width", Math.floor((parseInt(pokemon_data['EXP']) / EXP_CHART[parseInt(pokemon_data['level'])]) * 100) + "%");
+    $(".bar-hp").css("width", Math.floor((parseInt(character_data['health']) / max_hp) * 100) + "%");
+    $(".bar-exp").css("width", Math.floor((parseInt(character_data['EXP']) / EXP_CHART[parseInt(character_data['level'])]) * 100) + "%");
 }
 
 function updateTargetList() {
@@ -405,11 +458,22 @@ function updateTargetList() {
 
     $("#select-target-body .btn").click(function () {
 
+        // Populate move with modified data
+        if (currentMove["Type"])     currentMove["Type"]  = $("#move-type").val();
+        if (currentMove["Class"])    currentMove["Class"] = $("#move-class").val();
+
+        if (currentMove["DB"])       currentMove["DB"] = parseInt($("#move-db").val());
+        if (currentMove["AC"])       currentMove["AC"] = parseInt($("#move-ac").val());
+
+        if (currentMove["Crits On"]) currentMove["Crits On"] = parseInt($("#move-crit").val());
+
         sendMessage(host_id, JSON.stringify({
             "type": "battle_move",
-            "dealer": $("#pokemonId").val(),
+            "dealer": character_id,
             "target": $(this).attr("data-target"),
-            "move": currentMove
+            "move": currentMove,
+            "bonus_dmg": $("#move-dmg-bonus").val(),
+            "bonus_acc": $("#move-acc-bonus").val()
         }));
 
         currentMove = null;
@@ -457,14 +521,14 @@ function updateAfflictions() {
     $("#afflictions .btn-trigger").click(function () {
         sendMessage(host_id, JSON.stringify({
             "type": "pokemon_afflict_trigger",
-            "pokemon": $("#pokemonId").val(),
+            "pokemon": character_id,
             "affliction": $(this).parent().attr("data-value")
         }));
     });
     $("#afflictions .btn-delete").click(function () {
         sendMessage(host_id, JSON.stringify({
             "type": "pokemon_afflict_delete",
-            "pokemon": $("#pokemonId").val(),
+            "pokemon": character_id,
             "affliction": $(this).parent().attr("data-value")
         }));
 
@@ -479,132 +543,152 @@ function updateAfflictions() {
 // SERVER FUNCTIONS
 
 peer.on('connection', function (c) {
+    receiveMessages(c, readMessage);
+
     window.alert("debug");
 });
 
 function onClickConnect() {
     host_id = $("#gm-id").val();
 
-    var c = peer.connect(host_id, {
+    if (peer.connections[host_id] != null) {
+        for (var i = 0; i < peer.connections[host_id].length; i++) {
+            peer.connections[host_id][i].close();
+            peer.connections[host_id].splice(i, 1);
+        }
+    }
+
+    connection = peer.connect(host_id, {
         label: 'chat',
         serialization: 'none',
         metadata: {message: 'connect to host'}
     });
 
-    c.on('open', function () {
-        c.on('data', function (data) {
-            var json = JSON.parse(data);
+    connection.on('open', function () {
+        receiveMessages(connection, readMessage);
 
-            /*
-             Pokemon received
-             */
-            if (json.type == "pokemon") {
-                pokemon_data = json.pokemon;
-                fetchMoves();
-            }
-            /*
-             List of Pokemon received
-             */
-            else if (json.type == "pokemon_list") {
-                var html = "";
-                $.each(json.pokemon, function (id, pmon) {
-                    html += '<option value="' + id + '">' + pmon['name'] + '</option>';
-                });
-                $("#pokemonId").html(html);
+        // Connection established - make appropriate calls
 
-                $("#init-select").css("display", "block");
-                $("#init-connect").css("display", "none");
-            }
-            /*
-             Pokemon Added to Battle
-             */
-            else if (json.type == "battle_added") {
-                battle_data[json.pokemon_id] = json.pokemon_name;
-                updateTargetList();
-
-                // Show target list
-                $("#modalTarget-join").addClass("hidden");
-                $("#modalTarget-select").removeClass("hidden");
-            }
-            /*
-             Battle ended
-             */
-            else if (json.type == "battle_end") {
-                // Hide target list
-                $("#modalTarget-join").removeClass("hidden");
-                $("#modalTarget-select").addClass("hidden");
-            }
-            /*
-             Grid returned
-             */
-            else if (json.type == "battle_grid") {
-                $(".battle-grid").html(json.html);
-                onTargetGridLoaded();
-            }
-            /*
-             Health changed
-             */
-            else if (json.type == "health") {
-                pokemon_data["health"] = json.value;
-                updateStatus();
-            }
-            /*
-             Battle data changed
-             */
-            else if (json.type == "data_changed") {
-                if (json.field == "affliction") {
-                    afflictions = json.value;
-                    updateAfflictions();
-                }
-                else {
-                    $("#" + json.field).val(json.value);
-                }
-            }
-            /*
-             Add affliction
-             */
-            else if (json.type == "afflict_add") {
-                // Check if affliction is already on Pokemon
-                if ($.inArray(json.affliction) < 0) {
-                    afflictions.push(json.affliction);
-                    updateAfflictions();
-                }
-            }
-            /*
-             Remove affliction
-             */
-            else if (json.type == "afflict_delete") {
-                // Check if affliction is on Pokemon
-                if ($.inArray(json.affliction) >= 0) {
-                    afflictions.splice(array.indexOf(json.affliction), 1);
-                    updateAfflictions();
-                }
-            }
-            /*
-             Snackbar Alert Received
-             */
-            else if (json.type == "alert") {
-                doToast(message["content"]);
-            }
-
-        });
-
-        c.send(JSON.stringify({
-            "type": "pokemon_list"
-        }));
+        if ($.isEmptyObject(character_data)) {
+            connection.send(JSON.stringify({
+                "type": "pokemon_list"
+            }));
+        } else {
+            connection.send(JSON.stringify({
+                "type": "reconnect",
+                "character": character_data["ID"]
+            }));
+        }
     });
-    c.on('error', function (err) {
+    connection.on('error', function (err) {
         alert(err);
     });
 }
 
+function readMessage(connection, data) {
+    var json = JSON.parse(data);
+
+    /*
+     Pokemon received
+     */
+    if (json.type == "pokemon") {
+        character_data = json.pokemon;
+        fetchMoves();
+    }
+    /*
+     List of Pokemon received
+     */
+    else if (json.type == "pokemon_list") {
+        var html = "";
+        $.each(json.pokemon, function (id, pmon) {
+            html += '<option value="' + id + '">' + pmon['name'] + '</option>';
+        });
+        $("#pokemonId").html(html);
+
+        $("#init-select").css("display", "block");
+        $("#init-connect").css("display", "none");
+    }
+    /*
+     Pokemon Added to Battle
+     */
+    else if (json.type == "battle_added") {
+        battle_data[json.pokemon_id] = json.pokemon_name;
+        updateTargetList();
+
+        // Show target list
+        $("#modalTarget-join").addClass("hidden");
+        $("#modalTarget-select").removeClass("hidden");
+    }
+    /*
+     Battle ended
+     */
+    else if (json.type == "battle_end") {
+        // Hide target list
+        $("#modalTarget-join").removeClass("hidden");
+        $("#modalTarget-select").addClass("hidden");
+    }
+    /*
+     Grid returned
+     */
+    else if (json.type == "battle_grid") {
+        $(".battle-grid").html(json.html);
+        onTargetGridLoaded();
+    }
+    /*
+     Health changed
+     */
+    else if (json.type == "health") {
+        character_data["health"] = json.value;
+        updateStatus();
+    }
+    /*
+     Battle data changed
+     */
+    else if (json.type == "data_changed") {
+        if (json.field == "affliction") {
+            afflictions = json.value;
+            updateAfflictions();
+        }
+        else {
+            $("#" + json.field).val(json.value);
+        }
+    }
+    /*
+     Add affliction
+     */
+    else if (json.type == "afflict_add") {
+        // Check if affliction is already on Pokemon
+        if ($.inArray(json.affliction) < 0) {
+            afflictions.push(json.affliction);
+            updateAfflictions();
+        }
+    }
+    /*
+     Remove affliction
+     */
+    else if (json.type == "afflict_delete") {
+        // Check if affliction is on Pokemon
+        if ($.inArray(json.affliction) >= 0) {
+            afflictions.splice(array.indexOf(json.affliction), 1);
+            updateAfflictions();
+        }
+    }
+    /*
+     Snackbar Alert Received
+     */
+    else if (json.type == "alert") {
+        doToast(message["content"]);
+    }
+
+}
+
 function onClickLoadFromSelected() {
-    var pmon_id = $("#pokemonId").val();
+    character_id = $("#pokemonId").val();
 
     sendMessage(host_id, JSON.stringify({
         "type": "pokemon_get",
         "from": client_id,
-        "pokemon_id": pmon_id
+        "pokemon_id": character_id
     }));
 }
 
@@ -613,7 +697,7 @@ function addPokemonToBattle() {
     var message = {
         "type": "battle_add",
         "from": client_id,
-        "pokemon": $("#pokemonId").val(),
+        "pokemon": character_id,
         "stage_atk": $("#stage-atk").val(),
         "stage_def": $("#stage-def").val(),
         "stage_spatk": $("#stage-spatk").val(),
@@ -627,7 +711,7 @@ function addPokemonToBattle() {
 }
 
 function fetchMoves() {
-    $.getJSON("/api/v1/moves/?names=" + encodeURIComponent(JSON.stringify(pokemon_data["moves"])), function (json) {
+    $.getJSON("/api/v1/moves/?names=" + encodeURIComponent(JSON.stringify(character_data["moves"])), function (json) {
         var i = 0;
         $.each(json, function (name, move) {
             if (name != "") {
@@ -764,16 +848,16 @@ function onClickMenu() {
         elem.css("display", "none").addClass("hidden-xs").addClass("hidden-sm");
 }
 
-$(".btn-sidebar").click(function () {
+$(".btn-sidebar, .navbar-fixed-bottom .btn").click(function () { //TODO: redo sidebar
     var tab = $(this).attr("data-target");
 
     // Change out tab content
     $(".tab").css("display", "none");
     $("#tab" + tab).css("display", "block");
 
-    // Change out button classes
-    $("[data-toggle='tab']:not(.btn-simple)").addClass("btn-simple", 1000);
-    $(this).removeClass("btn-simple", 1000);
+    // Change navbar
+    $(this).parent().parent().find(".active").removeClass("active");
+    $(this).parent().addClass("active");
 
     if (tab == 2)
         updateInfoPage();
@@ -873,66 +957,4 @@ function typeToNum(type) {
         case "water":
             return 18;
     }
-}
-
-function typeColor(type) {
-    var color = "#000";
-
-    switch (type) {
-        case "Bug":
-            color = "rgb(158, 173, 30)";
-            break;
-        case "Dark":
-            color = "rgb(99, 78, 64)";
-            break;
-        case "Dragon":
-            color = "rgb(94, 33, 243)";
-            break;
-        case "Electric":
-            color = "rgb(244, 200, 26)";
-            break;
-        case "Fairy":
-            color = "rgb(223, 116, 223)";
-            break;
-        case "Fighting":
-            color = "rgb(179, 44, 37)";
-            break;
-        case "Fire":
-            color = "rgb(232, 118, 36)";
-            break;
-        case "Flying":
-            color = "rgb(156, 136, 218,)";
-            break;
-        case "Ghost":
-            color = "rgb(98, 77, 134)";
-            break;
-        case "Grass":
-            color = "rgb(112, 191, 72)";
-            break;
-        case "Ground":
-            color = "rgb(217, 178, 71)";
-            break;
-        case "Ice":
-            color = "rgb(130, 208, 208)";
-            break;
-        case "Normal":
-            color = "rgb(158, 158, 109)";
-            break;
-        case "Poison":
-            color = "rgb(149, 59, 149)";
-            break;
-        case "Psychic":
-            color = "rgb(247, 64, 119)";
-            break;
-        case "Rock":
-            color = "rgb(169, 147, 51)";
-            break;
-        case "Steel":
-            color = "rgb(166, 166, 196)";
-            break;
-        case "Water":
-            color = "rgb(82, 127, 238)";
-            break;
-    }
-    return color;
 }

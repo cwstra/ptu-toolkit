@@ -3,319 +3,421 @@
  * @author Will Stephenson
  */
 
-var gm_data = {};
-var battle = {};
+var gm_data = {}, connections = {}, previous_moves = [], in_battle = [];
+var battle = {}; //TODO: Refactor
 var currentView = 0;
 var pokedex = "pokemon";
+var campaignId;
+
+/**
+ * Enable "Are you sure" dialog before close
+ * @returns {boolean}
+ */
+window.onbeforeunload = function() {
+    return true;
+};
 
 /**
  * Receives commands/messages
  */
-peer.on('connection', function (c) {
-    receiveMessages(c, function (connection, data) {
-        var json = JSON.parse(data);
+peer.on('connection', function (c) { debugger;
 
-        /*
+    c.on('open', function () {
+        receiveMessages(c, readMessage);
+
+        c.send(JSON.stringify({
+            "type": "pokemon_list",
+            "pokemon": gm_data["pokemon"]
+        }));
+    });
+
+});
+
+function reconnect() {
+    peer.reconnect();
+}
+
+function readMessage(connection, data) {
+
+    var json = JSON.parse(data);
+
+    /*
          Snackbar Alert Received
          */
-        if (json.type == "alert"){
-            doToast(message["content"]);
-        }
-        /*
-         Send Pokemon Data
-         */
-        else if (json.type == "pokemon_get") {
-            var msg = {
-                "type": "pokemon",
-                "pokemon": gm_data["pokemon"][json.pokemon_id]
-            };
-            connection.send(JSON.stringify(msg));
-        }
-        /*
-         Send Pokemon List
-         */
-        else if (json.type == "pokemon_list") {
-            var msg1 = {
-                "type": "pokemon_list",
-                "pokemon": gm_data["pokemon"]
-            };
-            connection.send(JSON.stringify(msg1));
-        }
-        /*
-         Add Pokemon to Battle
-         */
-        else if (json.type == "battle_add") {
+    if (json.type == "alert"){
+        doToast(message["content"]);
+    }
+    /*
+     Send Pokemon Data
+     */
+    else if (json.type == "pokemon_get") {
+        var msg = {
+            "type": "pokemon",
+            "pokemon": gm_data["pokemon"][json.pokemon_id]
+        };
+        connection.send(JSON.stringify(msg));
+    }
+    /*
+     Send Pokemon List
+     */
+    else if (json.type == "pokemon_list") {
+        var msg1 = {
+            "type": "pokemon_list",
+            "pokemon": gm_data["pokemon"]
+        };
+        connection.send(JSON.stringify(msg1));
+    }
+    /*
+     Add Pokemon to Battle
+     */
+    else if (json.type == "battle_add") {
 
-            var pokemon_id = json.pokemon;
+        var pokemon_id = json.pokemon;
 
-            $.each(battle, function (id, json1) {
-                sendMessageToAll(JSON.stringify({
-                    "type": "battle_added",
-                    "pokemon_id": pokemon_id,
-                    "pokemon_name": gm_data["pokemon"][pokemon_id]["name"]
-                }));
-
-                connection.send(JSON.stringify({
-                    "type": "battle_added",
-                    "pokemon_id": id,
-                    "pokemon_name": gm_data["pokemon"][id]["name"]
-                }));
-            });
-
-            battle[json.pokemon] = {
-                "client_id": json.from,
-                "stage_atk": json.stage_atk,
-                "stage_def": json.stage_def,
-                "stage_spatk": json.stage_spatk,
-                "stage_spdef": json.stage_spdef,
-                "stage_speed": json.stage_speed,
-                "stage_acc": json.stage_acc,
-                "stage_eva": json.stage_eva,
-                "afflictions": {}
-            };
-
-            connection.send(JSON.stringify({
+        $.each(battle, function (id, json1) {
+            sendMessageToAll(JSON.stringify({
                 "type": "battle_added",
                 "pokemon_id": pokemon_id,
                 "pokemon_name": gm_data["pokemon"][pokemon_id]["name"]
             }));
 
-            // Check persistent afflictions
-            if (gm_data["pokemon"][pokemon_id]["afflictions"] != null) {
-                // Pokemon has burn
-                if ($.inArray("Burned", gm_data["pokemon"][pokemon_id]["afflictions"]) >= 0) {
-                    battle[monId]['stage_def'] = parseInt(battle[monId]['stage_def']) - 2;
+            connection.send(JSON.stringify({
+                "type": "battle_added",
+                "pokemon_id": id,
+                "pokemon_name": gm_data["pokemon"][id]["name"]
+            }));
+        });
 
-                    if (battle[monId]['stage_def'] < -6)
-                        battle[monId]['stage_def'] = -6;
+        battle[json.pokemon] = {
+            "client_id": json.from,
+            "stage_atk": json.stage_atk,
+            "stage_def": json.stage_def,
+            "stage_spatk": json.stage_spatk,
+            "stage_spdef": json.stage_spdef,
+            "stage_speed": json.stage_speed,
+            "stage_acc": json.stage_acc,
+            "stage_eva": json.stage_eva,
+            "afflictions": {}
+        };
 
-                    sendMessage(battle[monId]['client_id'], JSON.stringify({
-                        "type": "data_changed",
-                        "field": "stage-def",
-                        "value": battle[monId]['stage_def']
-                    }));
-                }
+        connection.send(JSON.stringify({
+            "type": "battle_added",
+            "pokemon_id": pokemon_id,
+            "pokemon_name": gm_data["pokemon"][pokemon_id]["name"]
+        }));
+
+        // Check persistent afflictions
+        if (gm_data["pokemon"][pokemon_id]["afflictions"] != null) {
+            // Pokemon has burn
+            if ($.inArray("Burned", gm_data["pokemon"][pokemon_id]["afflictions"]) >= 0) {
+                battle[monId]['stage_def'] = parseInt(battle[monId]['stage_def']) - 2;
+
+                if (battle[monId]['stage_def'] < -6)
+                    battle[monId]['stage_def'] = -6;
+
+                sendMessage(battle[monId]['client_id'], JSON.stringify({
+                    "type": "data_changed",
+                    "field": "stage-def",
+                    "value": battle[monId]['stage_def']
+                }));
             }
+        }
 
-            // Display Message
-            doToast(gm_data["pokemon"][json.pokemon]["name"] + " Appears!");
+        // Display Message
+        doToast(gm_data["pokemon"][json.pokemon]["name"] + " Appears!");
+
+        renderBattler();
+    }
+    /*
+     Update Field Received
+     */
+    else if (json.type == "pokemon_update") {
+        gm_data["pokemon"][json.pokemon][json.field] = json.value;
+
+        if (this.field == "health") {
+            var max_hp = gm_data["pokemon"][json.pokemon]['level'] + gm_data["pokemon"][json.pokemon]['hp'] * 3 + 10;
+            var w = Math.floor((gm_data["pokemon"][json.pokemon]['health'] / max_hp) * 100);
 
             renderBattler();
-        }
-        /*
-         Update Field Received
-         */
-        else if (json.type == "pokemon_update") {
-            gm_data["pokemon"][json.pokemon][json.field] = json.value;
 
-            if (this.field == "health") {
-                var max_hp = gm_data["pokemon"][json.pokemon]['level'] + gm_data["pokemon"][json.pokemon]['hp'] * 3 + 10;
-                var w = Math.floor((gm_data["pokemon"][json.pokemon]['health'] / max_hp) * 100);
-
-                $("[data-name='"+json.pokemon+"']").find(".progress-bar").css("width", w + "%");
-
-                sendMessage(battle[json.pokemon]["client_id"], JSON.stringify({
-                    "type": "health",
-                    "value": json.value
-                }));
-            }
-        }
-        /*
-         Update Combat Stage Received
-         */
-        else if (json.type == "pokemon_setcs") {
-            battle[json.pokemon][json.field] = json.value;
-        }
-        /*
-         Add an affliction
-         */
-        else if (json.type == "pokemon_afflict_add") {
-            addAffliction(json.affliction, json.pokemon, json['value']);
-        }
-        /*
-         Remove an affliction
-         */
-        else if (json.type == "pokemon_afflict_delete") {
-            deleteAffliction(json.affliction, json.pokemon);
-        }
-        /*
-         Trigger an affliction's handler
-         */
-        else if (json.type == "pokemon_afflict_trigger") {
-            handleAffliction(json.affliction, json.pokemon);
-        }
-        /*
-         Request for battle grid
-         */
-        else if (json.type == "battle_grid") {
-            // Get grid size
-            var size = (json.max_width / parseInt($("#grid-w").val())) - 2;
-            // Create parent
-            var grid = $('<div />');
-
-            // Create ready callback
-            grid.ready_callback = function () {
-                // Send result
-                connection.send(JSON.stringify({
-                    'type': 'battle_grid',
-                    'html': grid.html()
-                }));
-            };
-
-            // Generate grid
-            generateGrid(grid, size);
-        }
-        /*
-         Attack Received
-         */
-        else if (json.type == "battle_move") {
-            performMove(json.move, json.target, json.dealer);
-        }
-        /*
-         Manual Damage Received
-         */
-        else if (json.type == "battle_damage") {
-            damagePokemon(json.target, json.moveType, json.isSpecial, json.damage);
-        }
-        /*
-         Request for Status
-         */
-        else if (json.type == "status") {
-            connection.send(JSON.stringify({
-                "type": "gm_status",
-                "value": "online"
+            sendMessage(battle[json.pokemon]["client_id"], JSON.stringify({
+                "type": "health",
+                "value": json.value
             }));
         }
-    });
+    }
+    /*
+     Update Combat Stage Received
+     */
+    else if (json.type == "pokemon_setcs") {
+        battle[json.pokemon][json.field] = parseInt(json.value);
 
-    c.send(JSON.stringify({
-        "type": "pokemon_list",
-        "pokemon": gm_data["pokemon"]
-    }));
+        if (json.field === "stage_speed")
+            renderBattler();
+    }
+    /*
+     Add an affliction
+     */
+    else if (json.type == "pokemon_afflict_add") {
+        addAffliction(json.affliction, json.pokemon, json['value']);
+    }
+    /*
+     Remove an affliction
+     */
+    else if (json.type == "pokemon_afflict_delete") {
+        deleteAffliction(json.affliction, json.pokemon);
+    }
+    /*
+     Trigger an affliction's handler
+     */
+    else if (json.type == "pokemon_afflict_trigger") {
+        handleAffliction(json.affliction, json.pokemon);
+    }
+    /*
+     Request for battle grid
+     */
+    else if (json.type == "battle_grid") {
+        // Get grid size
+        var size = (json.max_width / parseInt($("#grid-w").val())) - 2;
+        // Create parent
+        var grid = $('<div />');
+
+        // Create ready callback
+        grid.ready_callback = function () {
+            // Send result
+            connection.send(JSON.stringify({
+                'type': 'battle_grid',
+                'html': grid.html()
+            }));
+        };
+
+        // Generate grid
+        generateGrid(grid, size);
+    }
+    /*
+     Attack Received
+     */
+    else if (json.type == "battle_move") {
+        performMove(json.move, json.target, json.dealer, json.bonus_acc, json.bonus_dmg);
+    }
+    /*
+     Manual Damage Received
+     */
+    else if (json.type == "battle_damage") {
+        damagePokemon(json.target, json.moveType, json.isSpecial, json.damage);
+    }
+    /*
+     Request for Status
+     */
+    else if (json.type == "status") {
+        connection.send(JSON.stringify({
+            "type": "gm_status",
+            "value": "online"
+        }));
+    }
+}
+
+// Initialize Firebase
+var config = {
+    apiKey: "AIzaSyBGYQmctNWkQWpII2cfqs9yBJOEwgKvKAM",
+    authDomain: "ptu-toolkit.firebaseapp.com",
+    databaseURL: "https://ptu-toolkit.firebaseio.com",
+    projectId: "ptu-toolkit",
+    storageBucket: "ptu-toolkit.appspot.com",
+    messagingSenderId: "412564537560"
+};
+firebase.initializeApp(config);
+
+// Store token
+var f_token;
+
+// Firebase Logic
+firebase.auth().onAuthStateChanged(function(user) {
+    if (user) {
+        // User is signed in, get token.
+
+        firebase.auth().currentUser.getToken(true).then(function(idToken) {
+            f_token = idToken;
+            // Send token to backend
+            $.ajax({
+                type: "GET",
+                url: "api/v1/campaign",
+                dataType: 'json',
+                async: false,
+                beforeSend: function (xhr) {
+                    xhr.setRequestHeader ("Authorization", "Basic " + btoa(user.uid+ ":" + idToken));
+                },
+                success: function (data, status, xhr){
+                    // Campaigns found
+                    if (data.length >= 1) {
+
+                    }
+                },
+                error: function (xhr, status, error) {
+                    window.alert(status + " " + error);
+                }
+            });
+        }).catch(function(error) {
+            window.alert(error);
+        });
+    } else {
+        // User is signed out.
+        // TODO: something?
+    }
+}, function(error) {
+    console.log(error);
 });
 
 /**
- * Generates the Pokemon battle, primarilly the health visual
+ * Generates the Pokemon battle, primarily the health visual
  */
 function renderBattler() {
     if (currentView == 0) {
         // Create grid
         generateGrid($(".battle-grid"), parseInt($("#zoom-slider").val()) * 6);
 
-        // Create health bars
+        var elems = [], html = '';
 
-        var html = '';
+        // If no one is in battle
+        if ($.isEmptyObject(battle)) {
+            html = '<h3 class="text-muted">No one\'s here yet 😟</h3>' +
+                '<h4 class="text-muted">Send your <a data-toggle="modal" data-target="#modalShare">customized link</a> to your players. ' +
+                'Then, have them hit "Join Battle" when they\'re ready.</h4>';
+        }
+        else {
 
-        $.each(battle, function (id, data) {
-            var max_hp = gm_data["pokemon"][id]['level'] + gm_data["pokemon"][id]['hp'] * 3 + 10;
-            var w = Math.floor((gm_data["pokemon"][id]['health'] / max_hp) * 100);
+            // Create health bars
 
-            if (w > 100)
-                console.log("Warning: Pokemon with ID " + id + " has hit points above its max: " +
-                    gm_data["pokemon"][id]['health'] + "/" + max_hp);
+            $.each(battle, function (id, data) {
+                var max_hp = gm_data["pokemon"][id]['level'] + gm_data["pokemon"][id]['hp'] * 3 + 10;
+                var health_pcent = Math.floor((gm_data["pokemon"][id]['health'] / max_hp) * 100);
+                var injuries = gm_data["pokemon"][id]['injuries'];
 
-            // Gather afflictions
-            var afflictions = "";
+                if (health_pcent > 100)
+                    console.log("Warning: Pokemon with ID " + id + " has hit points above its max: " +
+                        gm_data["pokemon"][id]['health'] + "/" + max_hp);
 
-            if (gm_data["pokemon"][id]['afflictions'] != null)
-                $.each(gm_data["pokemon"][id]['afflictions'], function (k, a) {
-                    afflictions += ' <span class="label label-danger">'+a+'</span>';
-                });
+                // Gather afflictions
+                var afflictions = "";
 
-            if (data['afflictions'] != null)
-                $.each(data['afflictions'], function (a, v) {
-                    afflictions += ' <span class="label label-danger">'+a+'</span>';
-                });
+                if (gm_data["pokemon"][id]['afflictions'] != null)
+                    $.each(gm_data["pokemon"][id]['afflictions'], function (k, a) {
+                        afflictions += ' <span class="label label-danger">' + a + '</span>';
+                    });
 
-            // Generate HTML
-            html += '<div class="col-md-6 col-md-offset-3 pokemon" data-name="' + id + '">' +
-                '<h2 class="name">' + gm_data["pokemon"][id]["name"] + afflictions + '</h2>' +
-                '<div class="progress" data-hp="' + gm_data["pokemon"][id]["hp"] + '" data-max-hp="' + gm_data["pokemon"][id]["max_hp"] + '">' +
-                '<div class="progress-bar progress-bar-danger" role="progressbar" aria-valuenow="' + w + '" aria-valuemin="0" aria-valuemax="100" style="width: ' + w + '%;"></div>' +
-                '</div>' +
-                '</div>';
-        });
+                if (data['afflictions'] != null)
+                    $.each(data['afflictions'], function (a, v) {
+                        afflictions += ' <span class="label label-danger">' + a + '</span>';
+                    });
 
-        html += '<br/><button class="btn btn-danger btn-raised" onclick="endBattle()">End Battle</button>';
+                // Generate HTML Elements in order of initiative
 
-        $("#view-holder").html(html);
+                var i = 0, speed = gm_data["pokemon"][id]['speed'] * getStageMultiplier(battle[id]["stage_speed"]);
+
+                while (i < elems.length) {
+                    if (speed > elems[i]["speed"])
+                        break;
+                    i++;
+                }
+
+                // Generate HTML
+                elems.splice(i, 0, {'html': '<div class="col-md-6 col-md-offset-3 pokemon" data-name="' + id + '">' +
+                        '<h2 class="name">' + gm_data["pokemon"][id]["name"] + afflictions + '</h2>' +
+                        '<div class="progress" data-hp="' + gm_data["pokemon"][id]["hp"] + '" data-max-hp="' + gm_data["pokemon"][id]["max_hp"] + '">' +
+                        '<div class="progress-bar progress-bar-danger" role="progressbar" aria-valuenow="' + health_pcent + '" aria-valuemin="0" aria-valuemax="100" style="width: ' + health_pcent + '%;"></div>' +
+                        '<div class="progress-bar progress-bar-injuries pull-right" role="progressbar" aria-valuenow="' + injuries + '0" aria-valuemin="0" aria-valuemax="100" style="width: ' + injuries + '0%;"></div>' +
+                        '</div>' +
+                        '</div>',
+                    'speed': speed});
+            });
+
+            $.each(elems, function (k, e) {
+                html += e['html'];
+            });
+
+            html += '<br/><button class="btn btn-danger btn-raised" onclick="endBattle()">End Battle</button>';
+        }
+
+        //$("#view-holder").html(html);
+        $("#tab-battle-list").html(html);
     }
 }
 
 function generateGrid(parent, size) {
-    // Create Grid
-
-    parent.html("");
-
-    var i, j,
-        columns = parseInt($("#grid-w").val()),
-        rows = parseInt($("#grid-h").val()),
-        width = columns * size,
-        height = rows * size,
-        ratioW = Math.floor(width/size),
-        ratioH = Math.floor(height/size);
-
-    for (i=0; i < rows; i++) {
-        var r = $('<div />').addClass("grid-row").appendTo(parent);
-
-        for (j = 0; j < columns; j++) {
-            $('<div />').css({
-                'width': size,
-                'height': size,
-                'border': 'solid 2px #444',
-                'display': 'inline-block'
-            })
-                .addClass('grid')
-                .attr("data-x", j)
-                .attr("data-y", i)
-                .appendTo(r);
-        }
-    }
-
-    $('.grid').show();
-
-    // Create grid pieces
-
-    var unplaced_id = '', p = 0, done = false;
-
-    $.each(battle, function (id, data) {
-        p++;
-        $.getJSON("/api/v1/pokemon/" + gm_data["pokemon"][id]['dex'], function (dex) {
-            // TODO: determine size
-
-            if ('x' in data) {
-                $('<div />').css({
-                    'width': size,
-                    'height': size,
-                    'background': 'url(img/pokemon/' + gm_data["pokemon"][id]["dex"] + '.gif) no-repeat center',
-                    'background-size': 'contain',
-                    'left': data['x'] * size,
-                    'top': data['y'] * size
-                }).addClass('grid-piece')
-                    .attr("data-id", id)
-                    .attr("data-x", data['x'])
-                    .attr("data-y", data['y'])
-                    .prependTo(parent);
-            }
-            else if (unplaced_id === '') {
-                unplaced_id = id;
-
-                //alert("Click a tile to place " + gm_data["pokemon"][id]["name"]);
-
-                $(".grid").click(function () {
-                    battle[unplaced_id]['x'] = parseInt($(this).attr("data-x"));
-                    battle[unplaced_id]['y'] = parseInt($(this).attr("data-y"));
-
-                    renderBattler();
-                });
-            }
-
-            p--;
-
-            if (done && p == 0 && parent.ready_callback != null)
-                parent.ready_callback()
-        });
-    });
+    // // Create Grid
+    //
+    // parent.html("");
+    //
+    // var i, j,
+    //     columns = parseInt($("#grid-w").val()),
+    //     rows = parseInt($("#grid-h").val()),
+    //     width = columns * size,
+    //     height = rows * size,
+    //     ratioW = Math.floor(width/size),
+    //     ratioH = Math.floor(height/size);
+    //
+    // for (i=0; i < rows; i++) {
+    //     var r = $('<div />').addClass("grid-row").appendTo(parent);
+    //
+    //     for (j = 0; j < columns; j++) {
+    //         $('<div />').css({
+    //             'width': size,
+    //             'height': size,
+    //             'border': 'solid 2px #444',
+    //             'display': 'inline-block'
+    //         })
+    //             .addClass('grid')
+    //             .attr("data-x", j)
+    //             .attr("data-y", i)
+    //             .appendTo(r);
+    //     }
+    // }
+    //
+    // $('.grid').show();
+    //
+    // // Create grid pieces
+    //
+    // var unplaced_id = '', p = 0, done = false;
+    //
+    // $.each(battle, function (id, data) {
+    //     p++;
+    //     $.getJSON("/api/v1/pokemon/" + gm_data["pokemon"][id]['dex'], function (dex) {
+    //         // TODO: determine size
+    //
+    //         if ('x' in data) {
+    //             $('<div />').css({
+    //                 'width': size,
+    //                 'height': size,
+    //                 'background': 'url(img/pokemon/' + gm_data["pokemon"][id]["dex"] + '.gif) no-repeat center',
+    //                 'background-size': 'contain',
+    //                 'left': data['x'] * size,
+    //                 'top': data['y'] * size,
+    //                 'margin-bottom': size
+    //             }).addClass('grid-piece')
+    //                 .attr("data-id", id)
+    //                 .attr("data-x", data['x'])
+    //                 .attr("data-y", data['y'])
+    //                 .prependTo(parent);
+    //         }
+    //         else if (unplaced_id === '') {
+    //             unplaced_id = id;
+    //
+    //             //alert("Click a tile to place " + gm_data["pokemon"][id]["name"]);
+    //
+    //             $(".grid").click(function () {
+    //                 battle[unplaced_id]['x'] = parseInt($(this).attr("data-x"));
+    //                 battle[unplaced_id]['y'] = parseInt($(this).attr("data-y"));
+    //
+    //                 renderBattler();
+    //             });
+    //         }
+    //
+    //         p--;
+    //
+    //         if (done && p == 0 && parent.ready_callback != null)
+    //             parent.ready_callback()
+    //     });
+    // });
 
     done = true;
 }
@@ -327,7 +429,7 @@ function renderPokemonList() {
     var html = '';
 
     $.each(gm_data['pokemon'], function (k, v) {
-        html += '<div class="edit-pokemon col-sm-4 col-md-3">'+
+        html += '<div class="edit-pokemon col-sm-6">'+
                 '<img src="img/pokemon/'+v["dex"]+'.gif"> '+v["name"]+
                 '<div class="btn-group-vertical pull-right">'+
                     '<button onclick="onClickEditPokemon(\''+k+'\')" class="btn btn-info btn-xs"><i class="material-icons">edit</i></button>'+
@@ -336,7 +438,7 @@ function renderPokemonList() {
             '</div>';
     });
 
-    $("#view-holder").find(".list-pokemon").html(html);
+    $("#body-pokemon").find(".list-pokemon").html(html);
 
     onRenderPokemonManage();
 }
@@ -345,126 +447,29 @@ function changeGMView(view) {
     currentView = view;
 
     if (view == 0) {
+        $("#body-battle").removeClass("hidden");
+        $("#body-pokemon").addClass("hidden");
+        $("#body-settings").addClass("hidden");
         renderBattler();
     }
     else if (view == 1) {
-        $("#view-holder").html($("#body-pokemon").html());
+        $("#body-battle").addClass("hidden");
+        $("#body-pokemon").removeClass("hidden");
+        $("#body-settings").addClass("hidden");
         renderPokemonList();
     }
     else if (view == 2) {
-        $("#view-holder").html($("#body-settings").html());
+        $("#body-battle").addClass("hidden");
+        $("#body-pokemon").addClass("hidden");
+        $("#body-settings").removeClass("hidden");
     }
 }
 
-function newGM() {
-    //New blank gm_data object
-    gm_data = {characters:{},pokemon:{},settings:{}};
 
-    // Update display
-    onDataLoaded();
-}
 
-function selectGM() {
-    // Update display
-    var ulAnchorElem = document.getElementById('uploadAnchor');
-    ulAnchorElem.click();
-}
-
-$("#expmon-mon").change(function(){
-	var id = $('#expmon-mon').find(":selected").val();
-	if (gm_data["pokemon"][id]){
-  	$.getJSON("api/v1/"+pokedex+"/"+gm_data["pokemon"][id].dex, function (dex) {
-	$.getJSON("api/v1/moves/", function (moves) {
-	$.getJSON("api/v1/abilities/", function (abilities) {
-	$.getJSON("api/v1/experience/", function (experience) {
-	$.getJSON("api/v1/natures/"+gm_data["pokemon"][id].nature, function (nature) {
-  		$('#expmon-JSON').val(JSONExport(gm_data["pokemon"][id],dex,moves,abilities,experience,nature));
-	});
-	});
-	});
-	});
-	});
-	}
-});
-
-function fetchExistingPokemon(){
-  document.getElementById("expmon-mon").options.length = 0;
-  document.getElementById("expmon-mon").innerHTML += "<option value = ''></option>";
-  $.each(gm_data["pokemon"],function (k,v){
-  	document.getElementById("expmon-mon").innerHTML += "<option value = '"+k+"'>" + v["name"] + "</option>";
-  });
-}
-
-$("#uploadAnchor").change(function() {
-    {
-        if (!window.File || !window.FileReader || !window.FileList || !window.Blob) {
-            alert('The File APIs are not fully supported in this browser.');
-            return;
-        }
-
-        input = document.getElementById('uploadAnchor');
-        if (!input) {
-            alert("Um, couldn't find the fileinput element.");
-        }
-        else if (!input.files) {
-            alert("This browser doesn't seem to support the `files` property of file inputs.");
-        }
-        else if (!input.files[0]) {
-            alert("Please select a file before clicking 'Load'");
-        }
-        else {
-            file = input.files[0];
-            fr = new FileReader();
-            fr.onload = (function (theFile) {
-                return function (e) {
-                    //console.log('e readAsText = ', e);
-                    //console.log('e readAsText target = ', e.target);
-                    try {
-                        json = JSON.parse(e.target.result);
-                        gm_data = json;
-
-                        onDataLoaded();
-                    } catch (ex) {
-                        alert('ex when trying to parse json = ' + ex);
-                    }
-                };
-            })(file);
-            fr.readAsText(file);
-        }
-    }
-});
-
-/**
- * Called when the GM Data is created/uploaded
- */
-function onDataLoaded() {
-    $("#display-gmid").html(client_id);
-    $(".content-select").css("display", "none");
-    $(".footer-gm").removeClass("hidden");
-
-    $("#link-sharable").val('http://ptu.will-step.com/?host=' + client_id);
-    new Clipboard('.btn');
-
-    $("#zoom-slider").noUiSlider({
-        start: [10] ,
-        step: 1,
-        connect: false,
-        range: {
-            min: 1,
-            max: 20
-        }
-    }).on("change", function () {
-        renderBattler();
-    });
-}
-
-function saveGM() {
-    var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(gm_data));
-    var dlAnchorElem = document.getElementById('downloadAnchor');
-    dlAnchorElem.setAttribute("href",     dataStr     );
-    dlAnchorElem.setAttribute("download", "GMData.json");
-    dlAnchorElem.click();
-}
+//
+// BATTLE FUNCTIONS
+//
 
 function startBattle() {
     battle = {};
@@ -488,138 +493,184 @@ function endBattle() {
     }
 }
 
+function doMoveDialog(dealer_id, move_name, move_json) {
+    if (currentView !== 0)
+        doToast(gm_data["pokemon"][dealer_id]["name"] + " used " + move_name + "!");
+
+    var html = '<img src="img/pokemon/' + gm_data["pokemon"][dealer_id]["dex"] + '.gif" />' +
+        '<div class="battle-dialog">' +
+        '<p>' + gm_data["pokemon"][dealer_id]["name"] + ' used <span style="color:' + typeColor(move_json["Type"]) + '">' + move_name + '</span></p>' +
+        '</div>';
+
+    $("#battle-message").html(html);
+}
+
+function addMoveDialogInfo(html) {
+    $(".battle-dialog").append('<p>' + '<strong>&gt;</strong> ' + html + '</p>');
+}
+
 /**
  * Handle a move request and dish out effects
- * @param moveName The name of the move used
+ * @param move Move JSON
  * @param target_id The Pokemon id of the target
  * @param dealer_id The Pokemon id of the user
+ * @param acc_bonus Value added to accuracy roll
+ * @param dmg_bonus Value added to damage
  */
-function performMove(moveName, target_id, dealer_id) {
-    doToast(gm_data["pokemon"][dealer_id]["name"] + " used " + moveName + "!");
+function performMove(move, target_id, dealer_id, acc_bonus, dmg_bonus) {
 
-    $.getJSON("/api/v1/moves/"+moveName, function (move) {
+    doMoveDialog(dealer_id, move["Title"], move);
 
-        var damageDone = 0;
-        var canMove = true;
+    var damageDone = 0;
+    var canMove = true;
 
-        // Paralysis check
-        if (gm_data["pokemon"][dealer_id]['afflictions'] != null &&
-            $.inArray("Paralysis", gm_data["pokemon"][dealer_id]['afflictions']) >= 0) {
+    // Paralysis check
+    if (gm_data["pokemon"][dealer_id]['afflictions'] != null &&
+        $.inArray("Paralysis", gm_data["pokemon"][dealer_id]['afflictions']) >= 0) {
 
-            // Save check roll
-            var check = roll(1, 20, 1);
+        // Save check roll
+        var check = roll(1, 20, 1);
 
-            if (check < 5) {
-                canMove = false;
-                doToast(gm_data["pokemon"][dealer_id]['name'] + " is paralyzed! They can't move!");
+        if (check < 5) {
+            canMove = false;
+            doToast(gm_data["pokemon"][dealer_id]['name'] + " is paralyzed! They can't move!");
+        }
+    }
+
+    // Confusion check
+    if (canMove && "Confused" in battle[dealer_id]['afflictions'])
+        canMove = handleAffliction("Confused", dealer_id);
+
+    // Check if Frozen (but don't Let It Go)
+    if (gm_data["pokemon"][dealer_id]['afflictions'] != null &&
+        $.inArray("Frozen", gm_data["pokemon"][dealer_id]['afflictions']) >= 0) {
+
+        doToast(gm_data["pokemon"][dealer_id]["name"] + " is frozen solid!");
+    }
+    // Check if Fainted
+    else if ("Fainted" in battle[dealer_id]['afflictions']) {
+        doToast("Fainted Pokemon cannot use actions, abilities, or features");
+    }
+    else if (canMove) {
+
+        var acRoll = roll(1, 20, 1);
+        var crit = 20, acCheck = acRoll + battle[dealer_id]["stage_acc"];
+
+        // Show roll
+
+        addMoveDialogInfo('<strong>ACC:</strong> Rolled ' + acRoll + ' on d20');
+
+        // Subtract target evade
+
+        if (target_id != "other") {
+            // Find speed evade
+            var speed_evade = Math.floor(gm_data["pokemon"][dealer_id]["speed"] / 5);
+
+            // Apply evade bonus
+            acCheck -= battle[dealer_id]["stage_eva"];
+
+            if (move["Class"] == "Physical") {
+                var phy_evade = Math.floor(gm_data["pokemon"][dealer_id]["def"] / 5);
+
+                acCheck -= speed_evade > phy_evade ? speed_evade : phy_evade;
+            }
+            else if (move["Class"] == "Special") {
+                var spc_evade = Math.floor(gm_data["pokemon"][dealer_id]["spdef"] / 5);
+
+                acCheck -= speed_evade > spc_evade ? speed_evade : spc_evade;
+            }
+            else
+                acCheck -= speed_evade;
+        }
+
+        // Move missed
+        if (move.hasOwnProperty('AC') && acCheck < parseInt(move["AC"])) {
+            doToast("It missed!");
+
+            // Check for triggers for if missed
+            if (move.hasOwnProperty("Triggers")) {
+                $.each(move["Triggers"], function (k, trigger) {
+                    if (trigger.hasOwnProperty("prereq") && trigger.prereq == "miss")
+                        $.each(trigger["req"]["miss"], function (t) {
+                            handleTrigger(t, dealer_id, target_id, damageDone, move["Title"], acRoll);
+                        });
+                });
             }
         }
+        // Move hit
+        else {
 
-        // Confusion check
-        if (canMove && "Confused" in battle[dealer_id]['afflictions'])
-            canMove = handleAffliction("Confused", dealer_id);
+            if (move["Class"] == "Physical" || move["Class"] == "Special") {
+                var db = parseInt(move["DB"]);
 
-        // Check if Frozen (but don't Let It Go)
-        if (gm_data["pokemon"][dealer_id]['afflictions'] != null &&
-            $.inArray("Frozen", gm_data["pokemon"][dealer_id]['afflictions']) >= 0) {
+                // STAB: if same type, increase damage base
 
-            doToast(gm_data["pokemon"][dealer_id]["name"] + " is frozen solid!");
-        }
-        // Check if Fainted
-        else if ("Fainted" in battle[dealer_id]['afflictions']) {
-            doToast("Fainted Pokemon cannot use actions, abilities, or features")
-        }
-        else if (canMove) {
+                var types = gm_data["pokemon"][dealer_id]["type"].split(" / ");
+                if (types[0] == move["Type"] || (types.length > 1 && types[1] == move["type"]))
+                    db += 2;
 
-            var acRoll = roll(1, 20, 1) + battle[dealer_id]["stage_acc"];
-            var crit = 20, evade = 0;
+                if (db > 28) db = 28;
 
-            if (target_id != "other") {
-                //TODO: get evade
-            }
+                // Roll for damage
 
-            // Move missed
-            if (move.hasOwnProperty('AC') && acRoll < parseInt(move["AC"]) + evade) {
-                doToast("It missed!");
+                var rolledDmg = rollDamageBase(db, acRoll >= crit ? 2 : 1);
+                var damage = 0;
 
-                // Check for triggers for if missed
-                if (move.hasOwnProperty("Triggers")) {
-                    $.each(move["Triggers"], function (k, trigger) {
-                        if (trigger.hasOwnProperty("prereq") && trigger.prereq == "miss")
-                            $.each(trigger["req"]["miss"], function (t) {
-                                handleTrigger(t, dealer_id, target_id, damageDone, moveName, acRoll);
-                            });
-                    });
+                // Show roll
+
+                addMoveDialogInfo('<strong>DMG:</strong> Rolled ' + rolledDmg + ' on DB' + db);
+
+                // Declare if critical hit
+                if (acRoll >= crit)
+                    doToast("Critical hit!");
+
+                // Add stat bonus to damage
+                if (move["Class"] == "Physical") {
+                    damage = rolledDmg +
+                        gm_data["pokemon"][dealer_id]["atk"] * getStageMultiplier(battle[dealer_id]["stage_atk"]);
+                }
+                else if (move["Class"] == "Special") {
+                    damage = rolledDmg +
+                        gm_data["pokemon"][dealer_id]["spatk"] * getStageMultiplier(battle[dealer_id]["stage_spatk"]);
+                }
+
+                // Distribute damage
+
+                damage += parseInt(dmg_bonus);
+
+                if (target_id == "other") {
+                    doToast("OUTGOING DAMAGE = " + damage);
+                    addMoveDialogInfo('<strong>OUTGOING DAMAGE:</strong> ' + damage);
+                    damageDone = damage;
+                }
+                else {
+                    damageDone = damagePokemon(target_id, move["Type"], move["Class"] == "Special", damage);
                 }
             }
-            // Move hit
-            else {
 
-                if (move["Class"] == "Physical" || move["Class"] == "Special") {
-                    var db = parseInt(move["DB"]);
+            /*
+            Triggers
+             */
 
-                    // STAB: if same type, increase damage base
-
-                    var types = gm_data["pokemon"][dealer_id]["type"].split(" / ");
-                    if (types[0] == move["Type"] || (types.length > 1 && types[1] == move["type"]))
-                        db += 2;
-
-                    if (db > 28) db = 28;
-
-                    // Roll for damage
-
-                    var rolledDmg = rollDamageBase(db, acRoll >= crit ? 2 : 1);
-                    var damage = 0;
-
-                    // Declare if critical hit
-                    if (acRoll >= crit)
-                        doToast("Critical hit!");
-
-                    // Add stat bonus to damage
-                    if (move["Class"] == "Physical") {
-                        damage = rolledDmg +
-                            gm_data["pokemon"][dealer_id]["atk"] * getStageMultiplier(battle[dealer_id]["stage_atk"]);
-                    }
-                    else if (move["Class"] == "Special") {
-                        damage = rolledDmg * (acRoll >= crit ? 2 : 1) +
-                            gm_data["pokemon"][dealer_id]["spatk"] * getStageMultiplier(battle[dealer_id]["stage_spatk"]);
-                    }
-
-                    // Distribute damage
-
-                    if (target_id == "other") {
-                        doToast("OUTGOING DAMAGE = " + damage);
-                        damageDone = damage;
-                    }
-                    else {
-                        damageDone = damagePokemon(target_id, move["Type"], move["Class"] == "Special", damage);
-                    }
-                }
-
-                /*
-                Triggers
-                 */
-
-                if (move.hasOwnProperty("Triggers")) {
-                    $.each(move["Triggers"], function (k, trigger) {
-                        handleTrigger(trigger, dealer_id, target_id, damageDone, moveName, acRoll);
-                    });
-                }
+            if (move.hasOwnProperty("Triggers")) {
+                $.each(move["Triggers"], function (k, trigger) {
+                    handleTrigger(trigger, dealer_id, target_id, damageDone, move["Title"], acRoll);
+                });
             }
         }
+    }
 
-        /*
-         Afflictions (move end)
-         */
+    /*
+     Afflictions (move end)
+     */
 
-        // Persistent afflictions triggered by move end
-        if (gm_data["pokemon"][dealer_id]['afflictions'] != null) {
-            if ($.inArray("Burned", gm_data["pokemon"][dealer_id]['afflictions']) >= 0)
-                handleAffliction("Burned", dealer_id);
-            if ($.inArray("Frozen", gm_data["pokemon"][dealer_id]['afflictions']) >= 0)
-                handleAffliction("Frozen", dealer_id);
-        }
-    });
+    // Persistent afflictions triggered by move end
+    if (gm_data["pokemon"][dealer_id]['afflictions'] != null) {
+        if ($.inArray("Burned", gm_data["pokemon"][dealer_id]['afflictions']) >= 0)
+            handleAffliction("Burned", dealer_id);
+        if ($.inArray("Frozen", gm_data["pokemon"][dealer_id]['afflictions']) >= 0)
+            handleAffliction("Frozen", dealer_id);
+    }
 }
 
 var typeEffects = {};
@@ -642,15 +693,15 @@ function damagePokemon(target_id, moveType, moveIsSpecial, damage) {
 
     var target_types = gm_data["pokemon"][target_id]["type"].split(" / ");
 
-    var effect1 = typeEffects[moveType.toLowerCase()][target_types[0].toLowerCase()];
-    var effect2 = 1;
+    var effect1 = typeEffects[moveType.toLowerCase()][target_types[0].toLowerCase()] || 1;
+    var effect2 = target_types.length > 1 ? typeEffects[moveType.toLowerCase()][target_types[1].toLowerCase()] || 1 : 1;
 
-    if (target_types.length > 1)
-        effect2 = typeEffects[moveType.toLowerCase()][target_types[1].toLowerCase()];
+    if (effect1 !== undefined)
+        damage = damage * effect1;
+    if (effect2 !== undefined)
+        damage = damage * effect2;
 
-    damage = damage * effect1 * effect2;
-
-    if (effect1 * effect2 == 0)
+    if (effect1 !== undefined && effect1 * effect2 === 0)
         doToast("No effect!");
     else if (effect1 * effect2 >= 2)
         doToast("It's super effective!");
@@ -661,6 +712,9 @@ function damagePokemon(target_id, moveType, moveIsSpecial, damage) {
     if (damage < 0) {
         damage = 1;
     }
+
+    // Round the damage
+    damage = Math.ceil(damage);
 
     // Calculating max_hp
     var max_hp = gm_data["pokemon"][target_id]['level'] + gm_data["pokemon"][target_id]['hp'] * 3 + 10;
@@ -691,8 +745,10 @@ function damagePokemon(target_id, moveType, moveIsSpecial, damage) {
 
     //Limiting health by number of injuries if appropriate
     if ((10-gm_data["pokemon"][target_id]["injuries"])/10 * max_hp < gm_data["pokemon"][target_id]["health"]){
-      gm_data["pokemon"][target_id]["health"] = (10-gm_data["pokemon"][target_id]["injuries"])/10;
+        gm_data["pokemon"][target_id]["health"] = Math.round((10-gm_data["pokemon"][target_id]["injuries"])/10 * max_hp);
     }
+
+    addMoveDialogInfo('<strong>Damage Delt:</strong> ' + damage);
 
     // Check if fainted
     if (gm_data["pokemon"][target_id]["health"] <= 0) {
@@ -746,7 +802,9 @@ function handleTrigger(trigger, dealer_id, target_id, damage_dealt, moveName, ac
 
         //Handling trigger by type
         if (trigger.type=="action-needed"){
-            doToast(trigger.text)
+            doToast(trigger.text);
+
+            addMoveDialogInfo('<strong>MANUAL ACTION:</strong> ' + trigger.text);
         }
         else if (trigger.type=="CS"){
             //Raising/lowering stats
@@ -758,11 +816,18 @@ function handleTrigger(trigger, dealer_id, target_id, damage_dealt, moveName, ac
                 else if (battle[id]["stage_"+stat] < -6)
                     battle[id]["stage_"+stat] = -6;
 
+                // Notify client
                 sendMessage(battle[id]['client_id'], JSON.stringify({
                     "type": "data_changed",
                     "field": "stage-"+stat,
                     "value": battle[id]['stage_'+stat]
                 }));
+
+                // Log change
+                if (trigger.value > 0)
+                    addMoveDialogInfo(gm_data["pokemon"][id]['name'] + '\'s <strong>'+stat+'</strong> increased');
+                else
+                    addMoveDialogInfo(gm_data["pokemon"][id]['name'] + '\'s <strong>'+stat+'</strong> decreased');
             });
         }
         else if (trigger.type=="heal"){
@@ -785,15 +850,24 @@ function handleTrigger(trigger, dealer_id, target_id, damage_dealt, moveName, ac
             //Setting Health bar
             var w = Math.floor((gm_data["pokemon"][id]['health'] / max_hp) * 100);
             $("[data-name='"+id+"']").find(".progress-bar").css("width", w + "%");
+
+            // Log change
+            addMoveDialogInfo(gm_data["pokemon"][id]['name'] + ' <strong>was healed</strong>');
         }
         else if (trigger.type=="vortex"){
             //TODO: Figure out vortex
+            // Log change
+            addMoveDialogInfo('<strong>Vortex</strong> has yet to be implemented');
         }
         else if (trigger.type=="push"){
             //TODO: Wait until map is implemented
+            // Log change
+            addMoveDialogInfo('<strong>Push</strong> has yet to be implemented');
         }
         else if (trigger.type=="switch"){
             //TODO: Not really a mechanism for this at present
+            // Log change
+            addMoveDialogInfo('<strong>Switch</strong> has yet to be implemented');
         }
         else if (trigger.type=="status"){
             $.each(trigger.stat, function (k, status) {
@@ -846,6 +920,9 @@ function handleTrigger(trigger, dealer_id, target_id, damage_dealt, moveName, ac
         }
         else if (trigger.type=="protect"){
             //TODO: Need ability to interrupt to implement
+
+            // Log change
+            addMoveDialogInfo('<strong>Protect/Interrupt</strong> has yet to be implemented');
         }
         else if (trigger.type=="execute"){
             var r = roll(1,100,1);
@@ -1108,6 +1185,12 @@ function handleAffliction(affliction, monId) {
     return true;
 }
 
+
+
+//
+// POKEMON MANAGEMENT
+//
+
 /**
  * Initialize Add/Edit Pokemon
  */
@@ -1230,7 +1313,7 @@ function onAddmonDexChange() {
 function updatePokemonEditor() {
     var dex = $("#addmon-dex").val();
 
-    if (dex != "")
+    if (dex !== "" && dex !== "TRAINER")
         $.getJSON("api/v1/"+pokedex+"/" + dex, function (entry) {
             // Fields to edit/view
             var field_level = $("#addmon-level");
@@ -1342,54 +1425,95 @@ function updatePokemonEditor() {
         });
 }
 
-function onClickAddPokemon() {
+function prepareSheet(sheet_type, entity_type) {
+    var modal = $("#modalSimpleSheet");
 
-    $("#addmon-id").val("").parent().addClass("is-empty");
-    $("#addmon-name").val("").parent().addClass("is-empty");
-    $("#addmon-dex").val("").parent().addClass("is-empty");
-    $("#addmon-level").val("").parent().addClass("is-empty");
-    $("#addmon-exp").val(0).parent().removeClass("is-empty");
-    $("#addmon-type1").val("").parent().addClass("is-empty");
-    $("#addmon-type2").val("").parent().addClass("is-empty");
-    $("#addmon-nature").val("").parent().addClass("is-empty");
-    $("#addmon-gender").val("Genderless").parent().removeClass("is-empty");
-    $("#addmon-discover").val("").parent().addClass("is-empty");
-    $("#addmon-item").val("").parent().addClass("is-empty");
-    $("#addmon-health").val("").parent().addClass("is-empty");
-    $("#addmon-injure").val("0").parent().removeClass("is-empty");
-    $("#addmon-hp").val("").parent().addClass("is-empty");
-    $("#addmon-atk").val("").parent().addClass("is-empty");
-    $("#addmon-def").val("").parent().addClass("is-empty");
-    $("#addmon-spdef").val("").parent().addClass("is-empty");
-    $("#addmon-spatk").val("").parent().addClass("is-empty");
-    $("#addmon-speed").val("").parent().addClass("is-empty");
-    $("[title='Move 1']").val("");
-    $("[title='Move 2']").val("");
-    $("[title='Move 3']").val("");
-    $("[title='Move 4']").val("");
-    $("[title='Move 5']").val("");
-    $("[title='Move 6']").val("");
-    $("[title='Move 7']").val("");
-    $("[title='Move 8']").val("");
-    $("[title='Move 9']").val("");
-    $("[title='Ability 1']").val("");
-    $("[title='Ability 2']").val("");
-    $("[title='Ability 3']").val("");
+    modal.find("[data-show]").each(function() {
+        if ($(this).attr("data-show") === entity_type)
+            $(this).parent().show();
+        else
+            $(this).parent().hide();
+    });
 
-    $('#modalAddPokemon').modal('show');
+    modal.find("[data-required]").each(function() {
+        if ($(this).attr("data-required") === entity_type)
+            $(this).attr("required", "");
+        else
+            $(this).removeAttr("required");
+    });
+
+    if (entity_type === "TRAINER") {
+        $("#addmon-dex").val("TRAINER");
+
+        $("addmon-hp").attr("data-base", "10");
+        $("addmon-atk").attr("data-base", "5");
+        $("addmon-def").attr("data-base", "5");
+        $("addmon-spatk").attr("data-base", "5");
+        $("addmon-spdef").attr("data-base", "5");
+        $("addmon-speed").attr("data-base", "5");
+    }
+}
+
+function onClickAddPokemon(sheet_type, entity_type) {
+
+    prepareSheet(sheet_type, entity_type);
+
+    // Reset Simple Sheet
+    if (sheet_type === "SIMPLE") {
+
+        $("#addmon-id").val("").parent().addClass("is-empty");
+        $("#addmon-name").val("").parent().addClass("is-empty");
+        $("#addmon-dex").val("").parent().addClass("is-empty");
+        $("#addmon-level").val("").parent().addClass("is-empty");
+        $("#addmon-exp").val(0).parent().removeClass("is-empty");
+        $("#addmon-type1").val("").parent().addClass("is-empty");
+        $("#addmon-type2").val("").parent().addClass("is-empty");
+        $("#addmon-nature").val("").parent().addClass("is-empty");
+        $("#addmon-gender").val("Genderless").parent().removeClass("is-empty");
+        $("#addmon-discover").val("").parent().addClass("is-empty");
+        $("#addmon-item").val("").parent().addClass("is-empty");
+        $("#addmon-health").val("").parent().addClass("is-empty");
+        $("#addmon-injure").val("0").parent().removeClass("is-empty");
+        $("#addmon-hp").val("").parent().addClass("is-empty");
+        $("#addmon-atk").val("").parent().addClass("is-empty");
+        $("#addmon-def").val("").parent().addClass("is-empty");
+        $("#addmon-spdef").val("").parent().addClass("is-empty");
+        $("#addmon-spatk").val("").parent().addClass("is-empty");
+        $("#addmon-speed").val("").parent().addClass("is-empty");
+        $("[title='Move 1']").val("");
+        $("[title='Move 2']").val("");
+        $("[title='Move 3']").val("");
+        $("[title='Move 4']").val("");
+        $("[title='Move 5']").val("");
+        $("[title='Move 6']").val("");
+        $("[title='Move 7']").val("");
+        $("[title='Move 8']").val("");
+        $("[title='Move 9']").val("");
+        $("[title='Ability 1']").val("");
+        $("[title='Ability 2']").val("");
+        $("[title='Ability 3']").val("");
+    }
+
+    $('#modalSimpleSheet').modal('show');
 }
 
 function onClickEditPokemon(id) {
+    var sheet = gm_data['pokemon'][id].hasOwnProperty("Sheet") ? gm_data['pokemon'][id]['Sheet'] : "SIMPLE";
+    var entity = gm_data['pokemon'][id]['dex'] === "" ? "TRAINER" : "POKEMON";
     var types = gm_data['pokemon'][id]['type'].split(" / ");
+
+    prepareSheet(sheet, entity);
 
     $("#addmon-id").val(id);
     $("#addmon-name").val(gm_data['pokemon'][id]['name']).parent().removeClass("is-empty");
-    $("#addmon-dex").val(gm_data['pokemon'][id]['dex']).parent().removeClass("is-empty");
+    $("#addmon-dex").val(gm_data['pokemon'][id]['dex']).parent().removeClass("is-empty").change();
     $("#addmon-level").val(gm_data['pokemon'][id]['level']).parent().removeClass("is-empty");
     $("#addmon-exp").val(gm_data['pokemon'][id]['EXP']).parent().removeClass("is-empty");
     $("#addmon-type1").val(types[0]).parent().removeClass("is-empty");
     if (types[1] != null)
         $("#addmon-type2").val(types[1]).parent().removeClass("is-empty");
+    else
+        $("#addmon-type2").val("").parent().addClass("is-empty");
     $("#addmon-nature").val(gm_data['pokemon'][id]['nature']).parent().removeClass("is-empty");
     $("#addmon-gender").val(gm_data['pokemon'][id]['gender']).parent().removeClass("is-empty");
     $("#addmon-discover").val(gm_data['pokemon'][id]['discovery']).parent().removeClass("is-empty");
@@ -1417,7 +1541,7 @@ function onClickEditPokemon(id) {
 
     updatePokemonEditor();
 
-    $('#modalAddPokemon').modal('show');
+    $('#modalSimpleSheet').modal('show');
 }
 
 function onClickDeletePokemon(id) {
@@ -1425,6 +1549,31 @@ function onClickDeletePokemon(id) {
         delete gm_data["pokemon"][id];
         renderPokemonList();
     }
+}
+
+$("#expmon-mon").change(function(){
+    var id = $('#expmon-mon').find(":selected").val();
+    if (gm_data["pokemon"][id]){
+        $.getJSON("api/v1/"+pokedex+"/"+gm_data["pokemon"][id].dex, function (dex) {
+            $.getJSON("api/v1/moves/", function (moves) {
+                $.getJSON("api/v1/abilities/", function (abilities) {
+                    $.getJSON("api/v1/experience/", function (experience) {
+                        $.getJSON("api/v1/natures/"+gm_data["pokemon"][id].nature, function (nature) {
+                            $('#expmon-JSON').val(JSONExport(gm_data["pokemon"][id],dex,moves,abilities,experience,nature));
+                        });
+                    });
+                });
+            });
+        });
+    }
+});
+
+function fetchExistingPokemon(){
+    document.getElementById("expmon-mon").options.length = 0;
+    document.getElementById("expmon-mon").innerHTML += "<option value = ''></option>";
+    $.each(gm_data["pokemon"],function (k,v){
+        document.getElementById("expmon-mon").innerHTML += "<option value = '"+k+"'>" + v["name"] + "</option>";
+    });
 }
 
 
@@ -1465,6 +1614,8 @@ $("#btn-impmon").click(function () {
             doToast(gm_data["pokemon"][pmon_id]["name"] + " was added");
 
             renderPokemonList();
+
+            saveCampaignToAPI();
         }
 });
 
@@ -1539,6 +1690,8 @@ function onRenderPokemonManage() {
 
             renderPokemonList();
             $('#modalAddPokemon').modal('hide');
+
+            saveCampaignToAPI();
         }
     });
 
@@ -1710,8 +1863,10 @@ function onRenderPokemonManage() {
             // Add Pokemon
             gm_data['pokemon'][generatePmonId()] = data;
 
-            doToast(data['name'] + " was added.")
+            doToast(data['name'] + " was added.");
             renderPokemonList();
+
+            saveCampaignToAPI();
         });
     });
 }
@@ -1727,4 +1882,181 @@ function generatePmonId() {
         pmon_id += chars.charAt(Math.floor(Math.random() * chars.length));
 
     return pmon_id;
+}
+
+//
+// DATA MANAGEMENT
+//
+
+function newCampaign() {
+    //New blank gm_data object
+    gm_data = {characters:{},pokemon:{},settings:{}};
+
+    // Update display
+    onDataLoaded();
+
+    // Create new entry in the database
+    if (firebase.auth().currentUser && !firebase.auth().currentUser.isAnonymous)
+        $.ajax({
+            type: "POST",
+            url: "api/v1/campaign/",
+            dataType: 'json',
+            data: {"name": "Campaign"},
+            async: false,
+            beforeSend: function (xhr) {
+                xhr.setRequestHeader ("Authorization", "Basic " + btoa(firebase.auth().currentUser.uid+ ":" + f_token));
+            },
+            success: function (data, status, xhr){
+                if (data) {
+                    campaignId = data;
+                }
+            },
+            error: function (xhr, status, error) {
+                window.alert(status + " " + error);
+            }
+        });
+}
+
+function uploadCampaign() {
+    // Update display
+    var ulAnchorElem = document.getElementById('uploadAnchor');
+    ulAnchorElem.click();
+}
+
+function selectCampaign(id) {
+    $.ajax({
+        type: "GET",
+        url: "api/v1/campaign/?id=" + id,
+        dataType: 'json',
+        async: false,
+        beforeSend: function (xhr) {
+            xhr.setRequestHeader ("Authorization", "Basic " + btoa(firebase.auth().currentUser.uid+ ":" + f_token));
+        },
+        success: function (data, status, xhr){
+            if (data) {
+                gm_data = JSON.parse(data['campaign_data']);
+                campaignId = id;
+                onDataLoaded();
+            }
+        },
+        error: function (xhr, status, error) {
+            window.alert(status + " " + error);
+        }
+    });
+}
+
+$("#uploadAnchor").change(function() {
+    {
+        if (!window.File || !window.FileReader || !window.FileList || !window.Blob) {
+            alert('The File APIs are not fully supported in this browser.');
+            return;
+        }
+
+        input = document.getElementById('uploadAnchor');
+        if (!input) {
+            alert("Um, couldn't find the fileinput element.");
+        }
+        else if (!input.files) {
+            alert("This browser doesn't seem to support the `files` property of file inputs.");
+        }
+        else if (!input.files[0]) {
+            alert("Please select a file before clicking 'Load'");
+        }
+        else {
+            file = input.files[0];
+            fr = new FileReader();
+            fr.onload = (function (theFile) {
+                return function (e) {
+                    //console.log('e readAsText = ', e);
+                    //console.log('e readAsText target = ', e.target);
+                    try {
+                        json = JSON.parse(e.target.result);
+                        gm_data = json;
+
+                        onDataLoaded();
+
+                        // Create new entry in the database
+                        if (firebase.auth().currentUser && !firebase.auth().currentUser.isAnonymous)
+                            $.ajax({
+                                type: "POST",
+                                url: "api/v1/campaign/",
+                                dataType: 'json',
+                                data: {"name": "Campaign", "data": JSON.stringify(gm_data)},
+                                async: false,
+                                beforeSend: function (xhr) {
+                                    xhr.setRequestHeader ("Authorization",
+                                        "Basic " + btoa(firebase.auth().currentUser.uid+ ":" + f_token));
+                                },
+                                success: function (data, status, xhr){
+                                    if (data) {
+                                        campaignId = data;
+                                    }
+                                },
+                                error: function (xhr, status, error) {
+                                    window.alert(status + " " + error);
+                                }
+                            });
+                    } catch (ex) {
+                        alert('ex when trying to parse json = ' + ex);
+                    }
+                };
+            })(file);
+            fr.readAsText(file);
+        }
+    }
+});
+
+/**
+ * Called when the GM Data is created/uploaded
+ */
+function onDataLoaded() {
+    $("#display-gmid").html(client_id);
+    $(".content-select").css("display", "none");
+    $(".footer-gm").removeClass("hidden");
+
+    $("#link-sharable").val('http://ptu.will-step.com/?host=' + client_id);
+    new Clipboard('.btn');
+
+    $("#zoom-slider").noUiSlider({
+        start: [10] ,
+        step: 1,
+        connect: false,
+        range: {
+            min: 1,
+            max: 20
+        }
+    }).on("change", function () {
+        renderBattler();
+    });
+
+    $("#view-holder").addClass("hidden");
+    changeGMView(0);
+}
+
+function saveGM() {
+    var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(gm_data));
+    var dlAnchorElem = document.getElementById('downloadAnchor');
+    dlAnchorElem.setAttribute("href",     dataStr     );
+    dlAnchorElem.setAttribute("download", "GMData.json");
+    dlAnchorElem.click();
+}
+
+function saveCampaignToAPI() {
+    // if (campaignId && firebase.auth().currentUser && !firebase.auth().currentUser.isAnonymous)
+    //     $.ajax({
+    //         type: "PUT",
+    //         url: "api/v1/campaign/",
+    //         dataType: 'json',
+    //         data: {"id": campaignId, "data": JSON.stringify(gm_data)},
+    //         async: false,
+    //         beforeSend: function (xhr) {
+    //             xhr.setRequestHeader ("Authorization", "Basic " + btoa(firebase.auth().currentUser.uid+ ":" + f_token));
+    //         },
+    //         success: function (data, status, xhr){
+    //             console.log("Saved campaign data.");
+    //         },
+    //         error: function (xhr, status, error) {
+    //             window.alert(status + " " + error);
+    //         }
+    //     });
 }

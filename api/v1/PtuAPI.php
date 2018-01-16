@@ -314,6 +314,157 @@ class PtuAPI extends API
         return $generator->start();
     }
     
+    /**
+     * User API Calls
+     *
+     * api/v1/user/
+     * api/v1/user/login/
+     * api/v1/user/exists/username
+     */
+    
+    public function user() {
+    	eval(file_get_contents("../../../../sql/ptu/db.php"));
+    
+    	if ($this->checkBasicRequest() && $this->method == 'GET' && $this->checkUserAuth()) {
+            $stmt = $db->prepare("SELECT * FROM users WHERE firebase_id=:fid");
+    		$stmt->execute(array("fid" => $_SERVER['PHP_AUTH_USER']));
+    		
+    		$r = $stmt->fetch();
+    		
+    		// If user found, JSON user data returned.
+    		return $r ? json_encode($r) : "false";
+    	}
+    	/* POST NEW USER api/v1/user/?... */
+    	else if ($this->checkBasicRequest() && $this->method == 'POST' && $this->checkUserAuth()) {
+    		$stmt = $db->prepare("INSERT INTO users (firebase_id, username) VALUES (:fid, :username)");
+    		$stmt->execute(array("fid" => $_POST['firebase_id'], "username" => $_POST['username']));
+    		
+    		return "true";
+    	}
+    	else if ($this->verb == "exists" && $this->method == 'GET') {
+    		$stmt = $db->prepare("SELECT COUNT(firebase_id) AS uexists FROM users WHERE username=?");
+    		$stmt->execute(array($this->args[0]));
+    		
+    		$r = $stmt->fetch();
+    		
+    		return $r['uexists'];
+    	}
+    	else if ($this->verb == "login" && $this->method == 'POST' && $this->checkUserAuth()) {
+    		$stmt = $db->prepare("SELECT username FROM users WHERE firebase_id=?");
+    		$stmt->execute(array($_SERVER['PHP_AUTH_USER']));
+    		
+    		$r = $stmt->fetch();
+    		
+    		if ($r && !is_null($r['username'])) {
+    			return $r['username'];
+    		}
+    		// User is not yet signed-up with a username
+    		else {
+    			http_response_code(204);
+    			return "";
+    		}
+    	}
+    	else {
+    		http_response_code(400);
+    		die;
+    	}
+    }
+
+    public function data() {
+
+        require_once __DIR__.'/../../lib/propel2/src/Propel/PtuToolkit/PtuApp.php';
+
+        $app = new \Propel\PtuToolkit\PtuApp();
+
+        if ($this->verb === "character") {
+            if ($this->args[0] === "list" && $this->method == "GET")
+                return $app->getCharacterList($_GET['campaign_id']);
+            else if ($this->args[0] === "moves" && $this->method == "GET")
+                return $app->getCharacterMoves($_GET['character_id']);
+            else if ($this->args[0] === "cs" && $this->method == "POST")
+                return $app->setCharacterCS($_POST['character_id'], $_POST['stat'], $_POST['value'],
+                    array_key_exists('doInc', $_POST) ? $_POST['doInc'] : true);
+            else if ($this->args[0] === "affliction" && $this->method == "POST") {
+                if ($_POST['method'] === "ADD") return $app->addAffliction($_POST['character_id'], $_POST['affliction']);
+                elseif ($_POST['method'] === "REMOVE") return $app->removeAffliction($_POST['character_id'], $_POST['affliction']);
+                else {
+                    echo "Invalid method. Must be either 'ADD' or 'REMOVE'.";
+                    http_response_code(400);
+                    die;
+                }
+            }
+            else if (!is_null($this->args[0]) && $this->method == "GET")
+                return $app->getCharacterById($this->args[0], array_key_exists("buffs", $_GET) ? $_GET['buffs'] : false);
+            else if (!is_null($this->args[0]) && $this->method == "POST")
+                return $app->saveCharacterData($this->args[0], $this->request);
+        }
+        else if ($this->verb === "battle") {
+            if ($this->args[0] === "join" && $this->method == "POST")
+                return $app->joinBattle($_POST['character_id']);
+        }
+
+        // Nothing has been returned, assume it's the users's fault
+        http_response_code(400);
+        die;
+    }
+
+    /**
+     * Campaign/Save Data
+     *
+     * api/v1/campaign
+     * api/v1/campaign/?id=7
+     */
+    public function campaign() {
+        eval(file_get_contents("../../../../sql/ptu/db.php"));
+
+        if ($this->checkBasicRequest() && $this->method == 'GET' && $this->checkUserAuth()) {
+            // GET LIST OF CAMPAIGNS api/vi/campaign
+            if (!array_key_exists('id', $_GET)) {
+                $stmt = $db->prepare("SELECT campaign_id, campaign_name, campaign_data FROM campaigns ".
+                                        "WHERE user_firebase_id=:fid");
+
+                $stmt->execute(array("fid" => $_SERVER['PHP_AUTH_USER']));
+
+                $campaigns = $stmt->fetchAll();
+
+                return $campaigns;
+            }
+            // GET CAMPAIGN BY ID api/v1/campaign/?=id
+            else {
+                $stmt = $db->prepare("SELECT campaign_id, campaign_name, campaign_data FROM campaigns ".
+                    "WHERE campaign_id=:id AND user_firebase_id=:fid");
+
+                $stmt->execute(array("id" => $_GET['id'], "fid" => $_SERVER['PHP_AUTH_USER']));
+
+                $campaign = $stmt->fetch();
+
+                return $campaign;
+            }
+        }
+        // CREATE NEW CAMPAIGN
+        else if ($this->checkBasicRequest() && $this->method == 'POST' && $this->checkUserAuth()) {
+            $stmt = $db->prepare("INSERT INTO campaigns (user_firebase_id, campaign_name, campaign_data) ".
+                "VALUES (:fid, :name, :data)");
+
+            $stmt->execute(array("fid" => $_SERVER['PHP_AUTH_USER'], "name" => $_POST['name'],
+                "data" => isset($_POST['data']) ? $_POST['data'] : NULL));
+
+            return $db->lastInsertId();
+        }
+        // UPDATE CAMPAIGN
+        else if ($this->checkBasicRequest() && $this->method == 'PUT' && $this->checkUserAuth()) {
+            $stmt = $db->prepare("UPDATE campaigns SET campaign_data=:data WHERE campaign_id=:id");
+
+            $stmt->execute(array("data" => $_POST['data'], "id" => $_POST['id']));
+
+            return true;
+        }
+        else {
+            http_response_code(400);
+            die;
+        }
+    }
+    
     /*********************
      * Private Functions *
      ********************/
@@ -415,5 +566,20 @@ class PtuAPI extends API
             }
             return "Not Found";
         }
+    }
+    
+    /**
+     * Authenticate user session token with Google Firebase
+     * @return bool
+     */
+    private function checkUserAuth() {
+    	if (!isset($_SERVER['PHP_AUTH_USER']) || !isset($_SERVER['PHP_AUTH_PW'])){
+    		http_response_code(400);
+    		die;
+    	}
+    	
+    	// TODO authenticate user
+    	
+    	return true;
     }
 }

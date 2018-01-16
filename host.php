@@ -8,6 +8,7 @@
     <title>PTU Battle Viewer</title>
 
     <link href='http://fonts.googleapis.com/css?family=Roboto:500,900italic,900,400italic,100,700italic,300,700,500italic,100italic,300italic,400' rel='stylesheet' type='text/css'>
+    <link href="https://fonts.googleapis.com/css?family=Roboto+Mono:300,400,500,700" rel="stylesheet">
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css">
     <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.4.0/css/font-awesome.min.css" rel="stylesheet">
 
@@ -41,6 +42,43 @@
             color: white;
         }
 
+        #battle-message {
+            text-shadow: #444 0px 0px 8px;
+        }
+
+        #battle-actions h3 {
+            font-family: "Roboto Mono", "Roboto", "Helvetica", "Arial", sans-serif;
+            font-weight: 500;
+            text-shadow: #444 1px 1px 6px;
+        }
+
+        #battle-actions .battle-dialog {
+            font-family: "Roboto Mono", "Roboto", "Helvetica", "Arial", sans-serif;
+            color: #333;
+            margin-top: 15px;
+            padding: 10px 10px 5px 10px;
+            background-color: rgba(0, 0, 0, 0);
+            background-image: linear-gradient(60deg, rgb(248, 248, 248), rgb(239, 239, 239));
+            border-radius: 4px;
+            border: #888 solid 3px;
+            text-shadow: none;
+        }
+
+        #battle-actions .battle-dialog p:not(:first-child){
+            text-align: left;
+        }
+
+        #battle-actions h2, #battle-actions h3, #battle-actions h4, #battle-actions h5, #battle-actions h6 {
+            margin-top: 5px;
+        }
+
+        #battle-help {
+            background: linear-gradient(60deg, #ef5350, #d32f2f);
+            font-weight: 400;
+            color: #FFF;
+            padding: 10px;
+        }
+
         .battle-slider {
             width: 300px;
             max-width: calc(100% - 45px);
@@ -54,6 +92,14 @@
             background: #f0f0f0;
         }
 
+        .progress-bar-injuries {
+            background-color: #9a9595;
+        }
+
+        .card-battle .content {
+            padding: 15px 45px;
+        }
+
         .grid-row {
             display: flex;
         }
@@ -64,7 +110,7 @@
 
         .grid{
             display: none;
-            background-color: #eaeaea;
+            background-color: #fcfcfc;
             border: 1px solid rgb(142, 142, 142);
         }
 
@@ -75,6 +121,20 @@
         .pokemon .progress {
             height: 8px;
             background: #bababa;
+        }
+
+        .char-name {
+            vertical-align: middle;
+            display: inline-block;
+            height: fit-content;
+        }
+
+        .char-entry {
+            margin: 5px 0;
+        }
+
+        .char-entry .btn-group-vertical {
+            margin: 5px 1px;
         }
 
         .effects {
@@ -112,6 +172,10 @@
 
         .content-generator {
             margin-top: 300px;
+        }
+
+        .edit-pokemon {
+            text-align: left;
         }
 
         .edit-pokemon img {
@@ -211,6 +275,16 @@
         .snackbar-container {
             padding-bottom: 65px;
         }
+
+        .snackbar:not(.snackbar-opened) {
+            z-index: -200;
+            display: none;
+        }
+
+        .ui-autocomplete {
+            height: 150px;
+            overflow-y: scroll;
+        }
     </style>
 </head>
 <body>
@@ -238,9 +312,9 @@
     <div id="view-holder">
         <div class="col-md-6 col-md-offset-3 content-select">
             <h2>Create or Import a GM File</h2>
-            <button class="btn btn-danger btn-raised" onclick="newGM();">Create Blank GM File</button>
+            <button class="btn btn-danger btn-raised" onclick="newCampaign();">Create Blank GM File</button>
             <br>
-            <button class="btn btn-danger btn-raised" onclick="selectGM();">Upload Existing GM File</button>
+            <button class="btn btn-danger btn-raised" onclick="uploadCampaign();">Upload Existing GM File</button>
         </div>
         <div class="col-md-6 col-md-offset-3 pokemon"></div>
     </div>
@@ -251,15 +325,66 @@
 
     <div class="hidden" id="body-battle">
         <div class="row">
-            <button class="btn btn-danger btn-raised pull-right" onclick="endBattle()">End Battle</button>
-
-            <div class="battle-slider">
-                <label class="control-label" for="zoom-slider">Zoom Level</label>
-                <div class="slider slider-danger" id="zoom-slider"></div>
+            <div class="col-sm-3" id="battle-actions">
+                <div id="battle-message" class="text-center">
+                    <img src="img/eevee_waving_by_kittycateevee-d9ex8gh.png" height="100" />
+                    <h3 class="text-danger">WELCOME</h3>
+                    <h4>We're glad you're here!</h4>
+                </div>
+                <hr/>
+                <div id="battle-help" class="text-center card">
+                    <h6>NEED HELP?</h6>
+                    <a class="text-info" href="https://github.com/absorr/ptu-toolkit/wiki/Tutorial-&-FAQ" target="_blank">Tutorial &amp; FAQs</a>
+                    <br/>
+                    <a class="text-info" href="https://github.com/absorr/ptu-toolkit/issues" target="_blank">Bug/Issue Reporting</a>
+                </div>
             </div>
-        </div>
-        <div class="row">
-            <div class="battle-grid"></div>
+            <div class="col-sm-9">
+                <div class="card card-battle card-nav-tabs">
+                    <div class="header header-danger">
+                        <div class="nav-tabs-navigation">
+                            <div class="nav-tabs-wrapper">
+                                <ul class="nav nav-tabs" data-tabs="tabs">
+                                    <li class="active">
+                                        <a href="#tab-battle-list" data-toggle="tab">
+                                            <i class="material-icons">list</i>
+                                            Health
+                                        </a>
+                                    </li>
+                                    <li>
+                                        <a href="#tab-battle-grid" data-toggle="tab" onclick="alert('Grid/Range features are coming soon!')">
+                                            <i class="material-icons">view_module</i>
+                                            Battle Grid
+                                        </a>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="content">
+                        <div class="tab-content">
+                            <div class="tab-pane active" id="tab-battle-list">
+                                <h3 class="text-muted">No one's here yet 😟</h3>
+                                <h4 class="text-muted">Send your <a data-toggle="modal" data-target="#modalShare">customized link</a> to your players.
+                                    Then, have them hit "Join Battle" when they're ready.</h4>
+                            </div>
+                            <div class="tab-pane" id="tab-battle-grid">
+                                <div class="row">
+                                    <button class="btn btn-danger btn-raised pull-right" onclick="endBattle()">End Battle</button>
+
+                                    <div class="battle-slider">
+                                        <label class="control-label" for="zoom-slider">Zoom Level</label>
+                                        <div class="slider slider-danger" id="zoom-slider"></div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="battle-grid"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -275,8 +400,14 @@
                                     Manage
                                 </a>
                             </li>
+                            <li class="hidden">
+                                <a href="#tab-char-io" data-toggle="tab">
+                                    <i class="material-icons">view_module</i>
+                                    Manage
+                                </a>
+                            </li>
                             <li>
-                                <a href="#tab-add" data-toggle="tab" onclick="onClickAddPokemon()">
+                                <a href="#tab-add" data-toggle="tab">
                                     <i class="material-icons">add</i>
                                     Create
                                 </a>
@@ -311,8 +442,16 @@
                     <div class="tab-pane active" id="tab-manage">
                         <div class="list-pokemon"></div>
                     </div>
+                    <div class="tab-pane" id="tab-char-io">
+                    </div>
                     <div class="tab-pane" id="tab-add">
-                        <p>To be moved here</p>
+                        <small class="text-muted"><i>MORE CHARACTER/POKEMON SHEET FEATURES ARE COMING</i></small>
+                        <h4>POKEMON</h4>
+                        <button class="btn btn-danger" onclick="onClickAddPokemon('SIMPLE','POKEMON')">Simple Sheet</button>
+                        <button class="btn" disabled>Full Sheet</button>
+                        <h4>TRAINER</h4>
+                        <button class="btn btn-danger" onclick="onClickAddPokemon('SIMPLE','OTHER')">Simple Sheet</button>
+                        <button class="btn" disabled>Full Sheet</button>
                     </div>
                     <div class="tab-pane" id="tab-generate">
                         <div class="col-md-8 col-md-offset-2 form-genmon">
@@ -591,7 +730,12 @@
     </div>
 
     <div class="hidden" id="body-settings">
-        <h1>Nothin' to see yet..</h1>
+        <div class="card">
+            <div class="card-body">
+                <h2>Settings</h2>
+                <button class="btn btn-danger" onclick="reconnect()">Reconnect to Peer.JS</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -723,7 +867,7 @@
 </div>
 
 <!-- Modal dialog for adding/editing Pokémon -->
-<div class="modal fade" id="modalAddPokemon" tabindex="-1" role="dialog" aria-labelledby="myModalLabel">
+<div class="modal fade" id="modalSimpleSheet" tabindex="-1" role="dialog" aria-labelledby="myModalLabel">
     <div class="modal-dialog" role="document">
         <div class="modal-content">
             <div class="modal-header">
@@ -739,16 +883,17 @@
                 <h4>Basic Info</h4>
 
                 <div class="form-group label-floating">
-                    <label class="control-label" for="addmon-name">Pokémon Name</label>
+                    <label class="control-label" for="addmon-name">Name</label>
                     <input class="form-control" type="text" id="addmon-name" data-field="name" required />
                 </div>
                 <div class="form-group label-floating">
                     <label class="control-label" for="addmon-dex">Pokédex ID</label>
-                    <input class="form-control" type="text" id="addmon-dex" data-field="dex" required data-populate="dex" />
+                    <input class="form-control" type="text" id="addmon-dex" data-field="dex" data-show="POKEMON"
+                           data-required="POKEMON" data-populate="dex" />
                 </div>
                 <div class="form-group label-floating">
                     <label class="control-label" for="addmon-type1">Type 1</label>
-                    <select class="form-control" id="addmon-type1" required data-populate="type"><option></option></select>
+                    <select class="form-control" id="addmon-type1" data-required="POKEMON" data-populate="type"><option></option></select>
                 </div>
                 <div class="form-group label-floating">
                     <label class="control-label" for="addmon-type2">Type 2</label>
@@ -766,7 +911,8 @@
 
                 <div class="form-group label-floating">
                     <label class="control-label" for="addmon-nature">Nature</label>
-                    <select class="form-control" id="addmon-nature" data-field="nature" required data-populate="nature">
+                    <select class="form-control" id="addmon-nature" data-field="nature" data-populate="nature"
+                            data-show="POKEMON" data-required="POKEMON">
                         <option></option>
                     </select>
                 </div>
@@ -781,7 +927,7 @@
 
                 <div class="form-group label-floating">
                     <label class="control-label" for="addmon-discover">Discovered at</label>
-                    <input class="form-control" type="text" id="addmon-discover" data-field="discovery" />
+                    <input class="form-control" type="text" id="addmon-discover" data-field="discovery" data-show="POKEMON" />
                     <p class="help-block">Where was the Pokémon found</p>
                 </div>
                 <div class="form-group label-floating">
@@ -850,7 +996,7 @@
                 </div>
                 <label for="addmon-moves">Abilities</label>
                 <div id="addmon-abilities">
-                    <select class="form-control" title="Ability 1" required data-populate="ability"><option></option></select>
+                    <select class="form-control" title="Ability 1" data-required="POKEMON" data-populate="ability"><option></option></select>
                     <select class="form-control" title="Ability 2" data-populate="ability"><option></option></select>
                     <select class="form-control" title="Ability 3" data-populate="ability"><option></option></select>
                 </div>
@@ -887,6 +1033,11 @@
     </div>
 </div>
 
+<!-- Google Firebase Init -->
+<script src="https://www.gstatic.com/firebasejs/4.1.3/firebase.js"></script>
+<script src="https://www.gstatic.com/firebasejs/4.1.3/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/4.1.3/firebase-auth.js"></script>
+
 <!-- JavaScript Imports -->
 <script src="http://cdn.peerjs.com/0.3/peer.min.js"></script>
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
@@ -903,6 +1054,8 @@
 <script src="dist/snackbar.min.js"></script>
 <script src="js/material.min.js"></script>
 <script src="js/nouislider.min.js"></script>
+<script src="js/jquery.sticky.js"></script>
+<script src="js/jquery.appear.js"></script>
 
 <script src="js/script.js"></script>
 <script src="js/JSONImport.js"></script>

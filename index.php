@@ -23,12 +23,30 @@
             100% {height: 50px;}
         }
 
-        body {
-            background: url('img/pixel-art-pokemon-wallpaper-2.jpg') no-repeat fixed center bottom;
-
+        body::before {
+            content: "";
+            display: block;
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -10;
+            background: url('img/pixel-art-pokemon-wallpaper-2.jpg') no-repeat center bottom;
+            -webkit-background-size: cover;
+            -moz-background-size: cover;
+            -o-background-size: cover;
             background-size: cover !important;
+        }
+
+        body {
             color: white;
             padding-top: 90px;
+            padding-bottom: 90px;
+        }
+
+        .navbar {
+            border: 0 !important;
         }
 
         .nav-pokemon {
@@ -47,6 +65,40 @@
         .nav-status {
             position: absolute;
             top: 75px;
+        }
+
+        .navbar-fixed-bottom .nav-bottom-item {
+            padding: 0;
+        }
+
+        .navbar-fixed-bottom .nav-bottom-item .btn {
+            width: 100%;
+            padding: 13px 0;
+            color: #EFEFEF;
+        }
+
+        .navbar-fixed-bottom .nav-bottom-item.active .btn {
+            color: #faaca6;
+        }
+
+        .navbar-fixed-bottom .nav-bottom-item .material-icons {
+            font-size: 24px;
+            width: 24px;
+            margin-right: 8px;
+        }
+
+        .navbar-fixed-bottom .nav-bottom-item.active::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -8px;
+            height: 4px;
+            background: #faaca6;
+        }
+
+        .nav-bottom-item:not(.active) .nav-bottom-label {
+            display: none;
         }
 
         .sidebar-nav {
@@ -206,6 +258,13 @@
             margin-bottom: 16px;
         }
 
+        .modal-move .move-desc {
+            text-align: center;
+            width: 90%;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
         .dexdata-move-colsep {
             background-color: black;
             width: 5px;
@@ -305,6 +364,10 @@
             width: 80%;
             margin-top: 0;
         }
+
+        .snackbar:not(.snackbar-opened) {
+            z-index: -200;
+        }
     </style>
 </head>
 <body>
@@ -317,28 +380,33 @@
     </div>
 </nav>
 
-<!--    <div class="container">-->
-<!--<!--        <ul class="nav nav-tabs">-->-->
-<!--<!--            <li class="active"><a href="javascript:void(0)">Moves</a></li>-->-->
-<!--<!--            <li><a href="javascript:void(0)">Info</a></li>-->-->
-<!--<!--            <li class="disabled"><a href="javascript:void(0)">Pokédex</a></li>-->-->
-<!--<!--            <li><a href="javascript:void(0)">Advanced</a></li>-->-->
-<!--<!--        </ul>-->-->
-<!---->
-<!--        <p class="lead nav-status text-success">-->
-<!--            <span class="fa fa-circle"></span> Connected to Battle-->
-<!--        </p>-->
-<!--    </div>-->
-
-<!-- Initial View (Join & Select) -->
+<nav class="navbar navbar-danger navbar-fixed-bottom">
+    <div class="container">
+        <div class="col-xs-4 nav-bottom-item active">
+            <button class="btn btn-simple" data-toggle="tab" data-target="1">
+                <i class="material-icons">directions_walking</i><span class="nav-bottom-label">Actions</span>
+            </button>
+        </div>
+        <div class="col-xs-4 nav-bottom-item">
+            <button class="btn btn-simple" data-toggle="tab" data-target="3">
+                <i class="material-icons">build</i><span class="nav-bottom-label">Manage</span>
+            </button>
+        </div>
+        <div class="col-xs-4 nav-bottom-item">
+            <button class="btn btn-simple" data-toggle="tab" data-target="2">
+                <i class="material-icons">assessment</i><span class="nav-bottom-label">Info</span>
+            </button>
+        </div>
+    </div>
+</nav>
 <div class="container content-init">
     <div class="well col-sm-4 col-sm-offset-4" id="init-connect">
-        <h1>Enter GM ID</h1>
+        <h2>Enter GM ID</h2>
         <input type="text" class="form-control" id="gm-id" placeholder="GM ID"/>
         <button class="btn btn-danger btn-raised" onclick="onClickConnect();">Connect</button>
     </div>
     <div class="well col-sm-4 col-sm-offset-4" id="init-select" style="display: none;">
-        <h1>Select Pokémon</h1>
+        <h2>Select Character</h2>
         <select id="pokemonId"></select>
         <button class="btn btn-danger btn-raised" onclick="onClickLoadFromSelected();">Select</button>
     </div>
@@ -364,14 +432,10 @@
         </div>
         <div class="content-header">
 
-            <button class="btn btn-danger btn-lg btn-sidebar" data-toggle="tab" data-target="1">Actions</button>
-
-            <button class="btn btn-danger btn-lg btn-sidebar btn-simple" data-toggle="tab" data-target="2">Info</button>
-
-            <button class="btn btn-danger btn-lg btn-sidebar btn-simple" data-toggle="tab" data-target="3">Manage</button>
-
             <button class="btn btn-danger btn-raised" id="btn-set-battle" onclick="addPokemonToBattle()">Join Battle
             </button>
+
+            <button class="btn btn-danger btn-raised" onclick="onClickConnect()">Reconnect</button>
         </div>
     </div>
 
@@ -381,90 +445,7 @@
             <h2 class="text-center text-muted">Moves</h2>
             <hr class="sm"/>
             <div class="moves">
-                <a class="btn btn-raised btn-move btn-move-1">
-                    <div>
-                        <h4 class="move-name"></h4>
-                        <span class="pull-right">
-                                <span class="label label-warning label-type"></span>
-                            </span>
-                    </div>
-                    <div class="btn-move-footer">
-                            <span class="pull-right move-desc" data-toggle="tooltip" data-placement="left">
-                                <i class="material-icons">info</i>
-                            </span>
-                        <span class="move-freq"></span>
-                    </div>
-                </a>
-                <a class="btn btn-raised btn-move btn-move-2" style="display: none;">
-                    <div>
-                        <h4 class="move-name"></h4>
-                        <span class="pull-right">
-                                <span class="label label-warning label-type"></span>
-                            </span>
-                    </div>
-                    <div class="btn-move-footer">
-                            <span class="pull-right move-desc" data-toggle="tooltip" data-placement="left">
-                                <i class="material-icons">info</i>
-                            </span>
-                        <span class="move-freq"></span>
-                    </div>
-                </a>
-                <a class="btn btn-raised btn-move btn-move-3" style="display: none;">
-                    <div>
-                        <h4 class="move-name"></h4>
-                        <span class="pull-right">
-                                <span class="label label-warning label-type"></span>
-                            </span>
-                    </div>
-                    <div class="btn-move-footer">
-                            <span class="pull-right move-desc" data-toggle="tooltip" data-placement="left">
-                                <i class="material-icons">info</i>
-                            </span>
-                        <span class="move-freq"></span>
-                    </div>
-                </a>
-                <a class="btn btn-raised btn-move btn-move-4" style="display: none;">
-                    <div>
-                        <h4 class="move-name"></h4>
-                        <span class="pull-right">
-                                <span class="label label-warning label-type"></span>
-                            </span>
-                    </div>
-                    <div class="btn-move-footer">
-                            <span class="pull-right move-desc" data-toggle="tooltip" data-placement="left">
-                                <i class="material-icons">info</i>
-                            </span>
-                        <span class="move-freq"></span>
-                    </div>
-                </a>
-                <a class="btn btn-raised btn-move btn-move-5" style="display: none;">
-                    <div>
-                        <h4 class="move-name"></h4>
-                        <span class="pull-right">
-                                <span class="label label-warning label-type"></span>
-                            </span>
-                    </div>
-                    <div class="btn-move-footer">
-                            <span class="pull-right move-desc" data-toggle="tooltip" data-placement="left">
-                                <i class="material-icons">info</i>
-                            </span>
-                        <span class="move-freq"></span>
-                    </div>
-                </a>
-                <a class="btn btn-raised btn-move btn-move-6" style="display: none;">
-                    <div>
-                        <h4 class="move-name"></h4>
-                        <span class="pull-right">
-                                <span class="label label-warning label-type"></span>
-                            </span>
-                    </div>
-                    <div class="btn-move-footer">
-                            <span class="pull-right move-desc" data-toggle="tooltip" data-placement="left">
-                                <i class="material-icons">info</i>
-                            </span>
-                        <span class="move-freq"></span>
-                    </div>
-                </a>
+
             </div>
             <h2 class="text-center text-muted">Other Actions</h2>
             <hr class="sm"/>
@@ -760,8 +741,64 @@
     <div class="modal fade" id="modalTarget" tabindex="-1" role="dialog" aria-labelledby="myModalLabel">
         <div class="modal-dialog" role="document">
             <div class="modal-content modal-move">
-                <h4 class="move-name"></h4>
-                <p class="move-desc"></p>
+                <h4 class="move-name" style="color: rgb(217, 178, 71);">Sand Attack</h4>
+                <p class="move-desc">Status Move. The target is Blinded until the end of their next turn.</p>
+                <div class="move-stats">
+                    <div class="row">
+                        <div class="col-xs-6">
+                            <div class="form-group label-floating">
+                                <label class="control-label" for="move-type">Move Type</label>
+                                <select class="form-control" id="move-type" data-populate="type" required>
+                                    <option></option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-xs-6">
+                            <div class="form-group label-floating">
+                                <label class="control-label" for="move-class">Move Class</label>
+                                <select class="form-control" id="move-class" required>
+                                    <option></option>
+                                    <option>Physical</option><option>Special</option><option>Status</option><option>Static</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-xs-6">
+                            <div class="form-group label-floating">
+                                <label class="control-label" for="move-db">Damage Base</label>
+                                <input class="form-control" id="move-db" min="1" max="28" value="7" required="" type="number">
+                            </div>
+                        </div>
+                        <div class="col-xs-6">
+                            <div class="form-group label-floating">
+                                <label class="control-label" for="move-ac">Accuracy Check</label>
+                                <input class="form-control" id="move-ac" min="1" max="20" value="2" required="" type="number">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-xs-6">
+                            <div class="form-group label-floating">
+                                <label class="control-label" for="move-range">Range</label>
+                                <input class="form-control" id="move-range" value="Cone 2" disabled="" type="text">
+                            </div>
+                        </div>
+                        <div class="col-xs-6">
+                            <div class="form-group label-floating">
+                                <label class="control-label" for="move-crit">Crits On</label>
+                                <input class="form-control" id="move-crit" min="1" max="20" value="20" required="" type="number">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="move-extras hidden">
+                    <div class="togglebutton">
+                        <label>
+                            <input id="genmon-is-wild" checked="" type="checkbox"><span class="toggle"></span> Add Modifiers
+                        </label>
+                    </div>
+                </div>
             </div>
 
             <div class="modal-content hidden" id="modalTarget-select">
@@ -773,6 +810,24 @@
 
                 <div class="modal-body" id="select-target-body">
                     <button class="btn btn-simple btn-danger btn-lg" data-target="other">Other Target</button>
+                </div>
+
+                <div class="modal-body" id="move-advanced-body">
+
+                    <div class="row">
+                        <div class="col-xs-6">
+                            <div class="form-group label-floating">
+                                <label class="control-label" for="move-dmg-bonus">Damage Bonus</label>
+                                <input class="form-control" type="number" value="0" id="move-dmg-bonus" />
+                            </div>
+                        </div>
+                        <div class="col-xs-6">
+                            <div class="form-group label-floating">
+                                <label class="control-label" for="move-acc-bonus">Accuracy Bonus</label>
+                                <input class="form-control" type="number" value="0" id="move-acc-bonus" />
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 

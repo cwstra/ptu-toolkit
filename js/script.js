@@ -5,6 +5,15 @@
 
 var host_id = null;
 var client_id = "";
+var campaign_id = 34;
+
+/**
+ * 0 - Normal
+ * 1 - Debug
+ * 2 - Unit Testing
+ * @type {number}
+ */
+var DBG_MODE = 0;
 
 var peer = new Peer({key: '0ecbb01z4hkc5wmi', debug: 3});
 
@@ -37,7 +46,44 @@ function receiveMessages(connection, callback) {
 }
 
 function sendMessage(to, message) {
-    peer.connections[to][0].send(message);
+
+    var c = peer.connections[to][0];
+
+    if (peer.disconnected)
+        peer.reconnect();
+
+    if (c !== null && !c.open) {
+        if (peer.connections[to].length > 1){
+            for (var i=0; i < peer.connections[to].length; i++) {
+                if (!peer.connections[to][i].open)
+                    peer.connections[to].splice(i, 1);
+                else
+                    c = peer.connections[to][i];
+            }
+        }
+
+        if (!c.open) {
+            doToast("Connection to peer lost. Attempting to communicate");
+
+            c = null;
+
+            var connect = peer.connect(to, {
+                label: 'chat',
+                serialization: 'none',
+                metadata: {message: 'connect to host'}
+            });
+            connect.on('open', function () {
+                doToast("Connection to peer found");
+                connect.send(message);
+            });
+            connect.on('error', function (err) {
+                alert(err);
+            });
+        }
+    }
+
+    if (c !== null)
+        c.send(message);
 }
 
 function sendMessageToAll(message) {
@@ -225,6 +271,9 @@ function fetchPokemon(offset, size) {
         if ($.isEmptyObject(json)) {
             $("[data-populate='dex']").autocomplete({
                 source: mon_list
+            }).focus(function() {
+                var val = $(this).val() === "" ? " " : $(this).val();
+                $(this).autocomplete('search', val);
             });
         }
         else {
@@ -237,4 +286,66 @@ function fetchPokemon(offset, size) {
             fetchPokemon(offset + size, size);
         }
     });
+}
+
+function typeColor(type) {
+    var color = "#000";
+
+    switch (type.toLowerCase()) {
+        case "bug":
+            color = "rgb(158, 173, 30)";
+            break;
+        case "dark":
+            color = "rgb(99, 78, 64)";
+            break;
+        case "dragon":
+            color = "rgb(94, 33, 243)";
+            break;
+        case "electric":
+            color = "rgb(244, 200, 26)";
+            break;
+        case "fairy":
+            color = "rgb(223, 116, 223)";
+            break;
+        case "fighting":
+            color = "rgb(179, 44, 37)";
+            break;
+        case "fire":
+            color = "rgb(232, 118, 36)";
+            break;
+        case "flying":
+            color = "rgb(156, 136, 218,)";
+            break;
+        case "ghost":
+            color = "rgb(98, 77, 134)";
+            break;
+        case "grass":
+            color = "rgb(112, 191, 72)";
+            break;
+        case "ground":
+            color = "rgb(217, 178, 71)";
+            break;
+        case "ice":
+            color = "rgb(130, 208, 208)";
+            break;
+        case "normal":
+            color = "rgb(158, 158, 109)";
+            break;
+        case "poison":
+            color = "rgb(149, 59, 149)";
+            break;
+        case "psychic":
+            color = "rgb(247, 64, 119)";
+            break;
+        case "rock":
+            color = "rgb(169, 147, 51)";
+            break;
+        case "steel":
+            color = "rgb(166, 166, 196)";
+            break;
+        case "water":
+            color = "rgb(82, 127, 238)";
+            break;
+    }
+    return color;
 }
